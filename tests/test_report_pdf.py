@@ -13,7 +13,7 @@ from core.calculator import (
     scale_opex_for_project,
 )
 from core.config import load_assumptions
-from core.report_pdf import build_summary_pdf
+from core.report_pdf import KIFC_LOGO_PATH, build_summary_pdf
 
 
 def _default_analysis() -> EconomicAnalysis:
@@ -92,3 +92,9 @@ def test_build_summary_pdf_returns_pdf_bytes():
 
     assert pdf_bytes.startswith(b"%PDF-")
     assert len(pdf_bytes) > 5_000
+    assert b"/Image" in pdf_bytes
+
+
+def test_kifc_logo_asset_is_available():
+    assert KIFC_LOGO_PATH.exists()
+    assert KIFC_LOGO_PATH.read_bytes().startswith(b"\x89PNG")

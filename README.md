@@ -18,6 +18,8 @@ KREI(2023) 「영농형 태양광 도입의 경제성 분석」 보고서의 모
 agpv_economics/
 ├── app.py                    # Streamlit 진입점
 ├── assumptions.yaml          # 모든 기본 가정값 (중앙 관리)
+├── assets/
+│   └── kifc-logo.png         # PDF 보고서용 식량과기후 공식 로고
 ├── .streamlit/config.toml    # Streamlit 테마·서버 설정
 ├── core/
 │   ├── calculator.py         # NPV/B/C/IRR 엔진

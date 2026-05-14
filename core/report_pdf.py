@@ -3,9 +3,13 @@ from __future__ import annotations
 
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 
 from core.calculator import AnalysisResult, EconomicAnalysis
+
+
+KIFC_LOGO_PATH = Path(__file__).resolve().parents[1] / "assets" / "kifc-logo.png"
 
 
 def _money(thousand_krw: float) -> str:
@@ -60,6 +64,7 @@ def build_summary_pdf(
         from reportlab.pdfbase.cidfonts import UnicodeCIDFont
         from reportlab.pdfbase.pdfmetrics import registerFont
         from reportlab.platypus import (
+            Image,
             Paragraph,
             SimpleDocTemplate,
             Spacer,
@@ -170,6 +175,16 @@ def build_summary_pdf(
         )
         return tbl
 
+    def logo_image():
+        if not KIFC_LOGO_PATH.exists():
+            return None
+
+        logo = Image(str(KIFC_LOGO_PATH))
+        logo.drawWidth = 54 * mm
+        logo.drawHeight = logo.drawWidth * logo.imageHeight / logo.imageWidth
+        logo.hAlign = "CENTER"
+        return logo
+
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
     meta = assumptions.get("meta", {})
     track_label = "PPA 고정가격계약" if analysis.price.track == "ppa" else "RPS 변동형(SMP+REC)"
@@ -177,7 +192,12 @@ def build_summary_pdf(
     annual_net = result.npv_total_annualized
     delta_vs_crop = annual_net - result.annual_crop_revenue_base
 
-    story = [
+    story = []
+    logo = logo_image()
+    if logo:
+        story.extend([logo, Spacer(1, 5)])
+
+    story.extend([
         para("영농형 태양광 경제성 요약 보고서", "title"),
         para(
             f"생성일 {generated_at} · 데이터 기준 {meta.get('data_date', '확인 필요')} · "
@@ -251,7 +271,7 @@ def build_summary_pdf(
             "한국에너지공단, 지자체, 금융기관, 시공사와 사업 조건을 별도 확인하세요.",
             "small",
         ),
-    ]
+    ])
 
     if share_url:
         story.extend(
