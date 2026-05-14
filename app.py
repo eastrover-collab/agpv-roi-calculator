@@ -85,6 +85,36 @@ st.markdown("""
         background-color: #d1fae5 !important;
         border-left: 4px solid #059669;
     }
+
+    /* 모바일/태블릿 반응형 — 좁은 화면에서 메트릭·컬럼 2열로 자동 wrap */
+    @media (max-width: 1100px) {
+        [data-testid="stHorizontalBlock"] {
+            flex-wrap: wrap !important;
+            gap: 8px !important;
+        }
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+            min-width: calc(50% - 8px) !important;
+            flex: 0 0 calc(50% - 8px) !important;
+        }
+        /* 메트릭 폰트 크기 축소 */
+        [data-testid="stMetricValue"] {
+            font-size: 1.4rem !important;
+        }
+        [data-testid="stMetricLabel"] {
+            font-size: 0.85rem !important;
+        }
+    }
+    @media (max-width: 600px) {
+        /* 모바일: 메트릭 1열 stack */
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+            min-width: 100% !important;
+            flex: 0 0 100% !important;
+        }
+        /* 제목 크기 축소 */
+        h1 { font-size: 1.5rem !important; }
+        h2 { font-size: 1.2rem !important; }
+        h3 { font-size: 1.05rem !important; }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -98,6 +128,38 @@ def get_assumptions():
 
 
 A = get_assumptions()
+
+
+# ──────────────────────────────────────────────────────────────────
+# URL Query Params (결과 공유용)
+# ──────────────────────────────────────────────────────────────────
+# 짧은 키: a=area, c=capacity, h=hours, b=budget, e=equity,
+#         r=rate, t=track, s=smp, x=rec, w=weight, p=ppa
+_qp = st.query_params
+
+
+def _qp_int(key: str, default: int) -> int:
+    try:
+        return int(_qp.get(key, default))
+    except (ValueError, TypeError):
+        return default
+
+
+def _qp_float(key: str, default: float) -> float:
+    try:
+        return float(_qp.get(key, default))
+    except (ValueError, TypeError):
+        return default
+
+
+def _qp_str(key: str, default: str) -> str:
+    return _qp.get(key, default)
+
+
+def _qp_loan_choice(default_key: str) -> str:
+    """융자 옵션 키. 잘못된 값이면 default."""
+    val = _qp.get("l", default_key)
+    return val if val in A["finance"]["loan_options"] else default_key
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -122,7 +184,7 @@ with st.sidebar:
         area_m2 = st.number_input(
             "농지 면적 (㎡)",
             min_value=500, max_value=10000,
-            value=int(A["facility"]["area_m2"]),
+            value=_qp_int("a", int(A["facility"]["area_m2"])),
             step=100,
             help="영농형 태양광을 설치할 면적. PDF 기준값 2,000㎡.",
         )
@@ -140,14 +202,14 @@ with st.sidebar:
         capacity_kw = st.number_input(
             "시설 용량 (kW)",
             min_value=10, max_value=1000,
-            value=recommended_kw,
+            value=_qp_int("c", recommended_kw),
             step=1,
             help=f"면적 기반 추천: {recommended_kw}kW. 직접 조정 가능.",
         )
         daily_hours = st.slider(
             "1일 평균 발전시간 (h)",
             min_value=2.5, max_value=5.0,
-            value=float(A["facility"]["daily_gen_hours"]),
+            value=_qp_float("h", float(A["facility"]["daily_gen_hours"])),
             step=0.1,
             help="전남 평균 3.5~3.8h. 일사량이 좋은 해남·영광은 3.8~4.0h.",
         )
@@ -161,7 +223,7 @@ with st.sidebar:
         total_cost = st.number_input(
             "총 사업비 (천원)",
             min_value=10_000, max_value=1_000_000,
-            value=recommended_cost,
+            value=_qp_int("b", recommended_cost),
             step=1_000,
             help=f"용량 기반 추천: {recommended_cost:,}천원 "
                  f"(2026 기준 kW당 약 {base_cost/base_kw/10:.0f}만원).",
@@ -170,35 +232,42 @@ with st.sidebar:
         equity_pct = st.slider(
             "자기자본 비율 (%)",
             min_value=10.0, max_value=100.0,
-            value=float(A["finance"]["equity_ratio"] * 100),
+            value=_qp_float("e", float(A["finance"]["equity_ratio"] * 100)),
             step=0.5,
             help="융자 외에 본인이 부담하는 비율. PDF 기준 23.5%.",
         )
 
         loan_option_keys = list(A["finance"]["loan_options"].keys())
+        default_loan = _qp_loan_choice("policy_2026")
         loan_choice = st.selectbox(
             "융자 조건",
             options=loan_option_keys,
             format_func=lambda k: f"{A['finance']['loan_options'][k]['name']} "
                                   f"({A['finance']['loan_options'][k]['rate']*100:.2f}%)",
-            index=1,  # 기본: 2026 정책금리
+            index=loan_option_keys.index(default_loan),
             help="2026 정책금리는 신재생에너지 금융지원 분기 변동.",
         )
         loan_rate = A["finance"]["loan_options"][loan_choice]["rate"]
-        custom_rate = st.checkbox("금리 직접 입력", value=False)
+        # URL로 사용자 정의 금리가 들어왔으면 자동 활성화
+        url_custom_rate = "r" in _qp and abs(_qp_float("r", loan_rate) - loan_rate) > 1e-6
+        custom_rate = st.checkbox("금리 직접 입력", value=url_custom_rate)
         if custom_rate:
             loan_rate = st.number_input(
                 "융자 금리 (%)",
                 min_value=0.5, max_value=10.0,
-                value=loan_rate * 100,
+                value=_qp_float("r", loan_rate) * 100,
                 step=0.1,
             ) / 100
 
     # 4. 발전가격
     with st.expander("⚡ 4단계: 발전 가격", expanded=True):
+        default_track = _qp_str("t", "rps")
+        if default_track not in ("rps", "ppa"):
+            default_track = "rps"
         track = st.radio(
             "발전 가격 트랙",
             options=["rps", "ppa"],
+            index=0 if default_track == "rps" else 1,
             format_func=lambda t: {
                 "rps": "RPS 트랙 (SMP + REC × 1.2)",
                 "ppa": "PPA 트랙 (고정가격계약)",
@@ -215,7 +284,7 @@ with st.sidebar:
                 smp = st.number_input(
                     "SMP (원/kWh)",
                     min_value=50.0, max_value=300.0,
-                    value=float(A["power_price"]["rps_track"]["smp_krw_per_kwh"]),
+                    value=_qp_float("s", float(A["power_price"]["rps_track"]["smp_krw_per_kwh"])),
                     step=1.0,
                     help="2026.1~4 평균 약 109.6원 (PDF 2023: 106.3원).",
                 )
@@ -223,31 +292,58 @@ with st.sidebar:
                 rec = st.number_input(
                     "REC (원/kWh)",
                     min_value=10.0, max_value=200.0,
-                    value=float(A["power_price"]["rps_track"]["rec_krw_per_kwh"]),
+                    value=_qp_float("x", float(A["power_price"]["rps_track"]["rec_krw_per_kwh"])),
                     step=1.0,
                     help="2026.1~4 평균 약 71.3원 (PDF 2023: 47.17원).",
                 )
             weight = st.number_input(
                 "REC 가중치 (영농형 1.2 기본)",
                 min_value=1.0, max_value=2.0,
-                value=float(A["power_price"]["rps_track"]["weight"]),
+                value=_qp_float("w", float(A["power_price"]["rps_track"]["weight"])),
                 step=0.1,
             )
             unit_price = smp + rec * weight
             st.metric("최종 발전단가", f"{unit_price:.1f} 원/kWh")
-            ppa_price = float(A["power_price"]["ppa_track"]["fixed_price_krw_per_kwh"])
+            ppa_price = _qp_float("p", float(A["power_price"]["ppa_track"]["fixed_price_krw_per_kwh"]))
         else:
             ppa_price = st.number_input(
                 "고정가격계약 단가 (원/kWh)",
                 min_value=80.0, max_value=250.0,
-                value=float(A["power_price"]["ppa_track"]["fixed_price_krw_per_kwh"]),
+                value=_qp_float("p", float(A["power_price"]["ppa_track"]["fixed_price_krw_per_kwh"])),
                 step=1.0,
                 help="2025 상반기 평균낙찰가 154.7원/kWh. 범위 140~170원.",
             )
-            smp = float(A["power_price"]["rps_track"]["smp_krw_per_kwh"])
-            rec = float(A["power_price"]["rps_track"]["rec_krw_per_kwh"])
-            weight = float(A["power_price"]["rps_track"]["weight"])
+            smp = _qp_float("s", float(A["power_price"]["rps_track"]["smp_krw_per_kwh"]))
+            rec = _qp_float("x", float(A["power_price"]["rps_track"]["rec_krw_per_kwh"]))
+            weight = _qp_float("w", float(A["power_price"]["rps_track"]["weight"]))
             st.metric("최종 발전단가", f"{ppa_price:.1f} 원/kWh")
+
+    # ─── URL에 현재 입력값 자동 동기화 ───
+    _qp.update({
+        "a": str(int(area_m2)),
+        "c": str(int(capacity_kw)),
+        "h": f"{daily_hours:.1f}",
+        "b": str(int(total_cost)),
+        "e": f"{equity_pct:.1f}",
+        "l": loan_choice,
+        "r": f"{loan_rate:.4f}",
+        "t": track,
+        "s": f"{smp:.2f}",
+        "x": f"{rec:.2f}",
+        "w": f"{weight:.2f}",
+        "p": f"{ppa_price:.1f}",
+    })
+
+    st.divider()
+
+    # ─── 공유 URL 섹션 ───
+    st.markdown("### 🔗 결과 공유")
+    import urllib.parse
+    BASE_URL = "https://agpv-roi-calculator-2000m.streamlit.app/"
+    share_query = urllib.parse.urlencode({k: v for k, v in _qp.to_dict().items()})
+    share_url = f"{BASE_URL}?{share_query}"
+    st.code(share_url, language=None)
+    st.caption("이 링크를 카톡·SNS로 공유하면 똑같은 입력값으로 결과가 나옵니다.")
 
     st.divider()
     st.caption("💡 결과는 추정치입니다. 실제 도입 전 전문가 상담 권장.")
