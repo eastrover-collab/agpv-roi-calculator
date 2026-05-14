@@ -89,6 +89,7 @@ with st.sidebar:
             step=100,
             help="영농형 태양광을 설치할 면적. PDF 기준값 2,000㎡.",
         )
+        st.caption(f"≈ **{area_m2:,}** ㎡ ({area_m2/3.3058:,.0f}평)")
         region_label = st.selectbox(
             "지역",
             options=["전라남도"],
@@ -125,6 +126,7 @@ with st.sidebar:
             step=1_000,
             help=f"용량 기반 추천: {recommended_cost:,}천원 (PDF 기준 kW당 약 198만원).",
         )
+        st.caption(f"≈ **{total_cost:,}** 천원 ({total_cost/100_000:.2f}억원)")
         equity_pct = st.slider(
             "자기자본 비율 (%)",
             min_value=10, max_value=100,

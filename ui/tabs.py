@@ -91,9 +91,9 @@ def render_headline_tab(result: AnalysisResult, analysis: EconomicAnalysis):
         df_in = pd.DataFrame({
             "항목": ["발전 수익", "벼 소득 (단수감소 반영)", "합계"],
             "금액 (천원/년)": [
-                round(result.annual_power_revenue),
-                round(result.annual_crop_revenue),
-                round(result.annual_power_revenue + result.annual_crop_revenue),
+                f"{round(result.annual_power_revenue):,}",
+                f"{round(result.annual_crop_revenue):,}",
+                f"{round(result.annual_power_revenue + result.annual_crop_revenue):,}",
             ],
         })
         st.dataframe(df_in, hide_index=True, use_container_width=True)
@@ -111,13 +111,13 @@ def render_headline_tab(result: AnalysisResult, analysis: EconomicAnalysis):
                 "합계",
             ],
             "금액 (천원/년)": [
-                round(result.annual_finance_cost),
-                round(analysis.opex.electrical_mgmt),
-                round(analysis.opex.insurance),
-                round(analysis.opex.inverter_replace),
-                round(analysis.opex.waste_disposal),
-                round(analysis.opex.utility_repair),
-                round(result.annual_opex),
+                f"{round(result.annual_finance_cost):,}",
+                f"{round(analysis.opex.electrical_mgmt):,}",
+                f"{round(analysis.opex.insurance):,}",
+                f"{round(analysis.opex.inverter_replace):,}",
+                f"{round(analysis.opex.waste_disposal):,}",
+                f"{round(analysis.opex.utility_repair):,}",
+                f"{round(result.annual_opex):,}",
             ],
         })
         st.dataframe(df_out, hide_index=True, use_container_width=True)
