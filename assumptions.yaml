@@ -1,0 +1,135 @@
+# 영농형 태양광 경제성 계산기 — 기본 가정값
+# 2026.05.14 기준 (v1.0)
+# 기준: 전남 / 논벼 / 99kW / 2,000㎡
+
+meta:
+  version: "2026-v1.0"
+  data_date: "2026-05-14"
+  base_region: "jeonnam"
+  base_crop: "rice"
+  source_note: "KREI(2023) 「영농형 태양광 도입의 경제성 분석」 4장을 2026 데이터로 업데이트"
+
+# 시설 기본 사양 ────────────────────────────────────────────
+facility:
+  area_m2: 2000                # ㎡
+  capacity_kw: 99              # kW
+  daily_gen_hours: 3.5         # h/일 (KREI 2023 PDF 기준값; 2026 전남 추정 3.6~3.8h)
+  efficiency_decline: 0.011    # 연 발전효율 감소율 1.1%
+  lifetime_years: 23           # 농지법 개정 반영 (2026.02 통과: 8년→23년)
+
+# 사업비 (KREI 2023 PDF 기준값 — 검증용) ─────────────────
+cost:
+  total_krw: 196_000_000       # 1.96억 (PDF 기준)
+  construction: 180_000_000    # 공사비
+  permits: 16_000_000          # 농지보전·계통연계·개발행위
+  # 2026 업데이트 후보 (수동 전환):
+  # total_krw: 210_000_000
+  # construction: 194_000_000
+  # permits: 16_000_000
+
+# 자금 조달 ─────────────────────────────────────────────
+finance:
+  equity_ratio: 0.235          # 자기자본 비율 23.5%
+  loan_rate: 0.028             # 정책금리 2.8% (PDF 기준)
+  grace_years: 5               # 거치 5년
+  repay_years: 10              # 분할상환 10년
+  loan_options:                # UI 토글용 (Phase 2)
+    policy_2023:  { name: "정책금리(2023 PDF)", rate: 0.028 }
+    policy_2026:  { name: "신재생에너지 금융지원(2026)", rate: 0.018 }
+    rural_fund:   { name: "농어촌진흥기금(2026)",      rate: 0.010 }
+    market:       { name: "시중금리(2026)",            rate: 0.045 }
+
+# 발전 가격 (두 트랙) ───────────────────────────────────
+power_price:
+  # 트랙 A: 기존 RPS (2026 이전 준공 사업 / PDF와 1:1 비교용)
+  rps_track:
+    smp_krw_per_kwh: 106.32           # PDF 기준
+    rec_krw_per_kwh: 47.17            # PDF 기준
+    weight: 1.2                        # 영농형 가중치 (1.0 + 0.2 보너스)
+    # 합계 = SMP + REC × weight = 106.32 + 47.17 × 1.2 = 162.92
+    # 2026 업데이트 후보:
+    # smp_krw_per_kwh: 109.6           # 2026.1~4 평균
+    # rec_krw_per_kwh: 71.3            # 2026.1~4 평균 (가중치 반영 전)
+    # weight: 1.2
+
+  # 트랙 B: 신규 PPA / 고정가격계약 (2026 이후 신규 사업)
+  ppa_track:
+    fixed_price_krw_per_kwh: 154.7    # 2025 상반기 평균낙찰가
+    # 범위: 140 ~ 170
+
+  # 시나리오 분석용
+  scenarios:
+    base:       162.9
+    decline:    152.4
+    sharp_decline: 141.9
+
+# 운영비 (천원/년, 99kW 기준) ─────────────────────────────
+opex_thousand_krw:
+  inverter_replace: 1000       # 인버터 교체 (10년 주기 분할)
+  electrical_mgmt:  1200       # 전기안전관리대행
+  insurance:         540       # 보험료
+  waste_disposal:    250       # 폐기물 처리
+  utility_repair:    420       # 전기료 및 수선비
+
+# 작물 (벼 기본, 확장 가능) ──────────────────────────────
+crops:
+  rice:
+    name_kr: "논벼"
+    base_income_thousand_krw_per_2000m2: 1388   # 2018~2022 올림픽평균 (PDF)
+    yield_reduction: 0.20                        # 영농형 하부 단수 20% 감소 (영암 실증 21%)
+    note: "PDF 138.8만원 기준; 2024 단수 급감으로 2020~2024 올림픽평균은 추후 KOSIS 직접 갱신 필요"
+  # 향후 확장 (현재 비활성):
+  # potato:
+  #   name_kr: "감자"
+  #   yield_reduction: 0.18
+  # onion:
+  #   name_kr: "양파"
+  #   yield_reduction: 0.11
+  # cabbage:
+  #   name_kr: "배추"
+  #   yield_reduction: 0.07
+
+# 지역 (전남 기본, 확장 가능) ────────────────────────────
+regions:
+  jeonnam:
+    name_kr: "전라남도"
+    avg_sun_hours: 3.5                  # PDF 기준값
+    land_price_outside_per_m2: 15415    # 진흥지역 밖 평균 공시지가 (2022 PDF)
+    land_price_inside_per_m2: 18500     # 진흥지역 안 (추정)
+    conversion_tax_rate: 0.30           # 잡종지 전환 시 공시지가 30%
+    # 2026 업데이트 후보:
+    # avg_sun_hours: 3.7
+    # land_price_outside_per_m2: 16200
+
+# 농지법 (2026 개정 단일 시나리오) ───────────────────────
+land_law:
+  current:
+    max_operation_years: 23
+    requires_land_conversion: false
+    name_kr: "현행(2026 개정) 23년 일시사용허가"
+  # 비교용 (전문가 모드에서만 노출):
+  legacy_8yr:
+    max_operation_years: 8
+    requires_land_conversion: false
+    name_kr: "구법 8년만 운영"
+  legacy_conversion:
+    max_operation_years: 20
+    requires_land_conversion: true
+    name_kr: "구법 + 잡종지 전환 후 20년"
+
+# 할인율 (NPV 계산) ─────────────────────────────────────
+discount:
+  base_rate: 0.028              # PDF 기본 (대출이자율과 동일 가정)
+  risk_premium:
+    none:   { management: 0.00, financial: 0.00, total: 0.045 }
+    low:    { management: 0.03, financial: 0.02, total: 0.095 }
+    mid:    { management: 0.06, financial: 0.04, total: 0.145 }
+    high:   { management: 0.09, financial: 0.06, total: 0.195 }
+  market_loan_rate: 0.045       # 시중금리 (리스크 프리미엄 분석용)
+  market_repay_years: 20
+
+# 시나리오 분석 변수 ──────────────────────────────────
+sensitivity:
+  price_change:    [-0.15, 0, 0.15]   # 발전가격 ±15%
+  cost_change:     [-0.15, 0, 0.15]   # 설치비 ±15%
+  rate_change:     [-0.0105, 0]       # 금리 인하 1.05%p
