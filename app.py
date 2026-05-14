@@ -169,10 +169,10 @@ with st.sidebar:
         st.caption(f"≈ **{total_cost:,}** 천원 ({total_cost/100_000:.2f}억원)")
         equity_pct = st.slider(
             "자기자본 비율 (%)",
-            min_value=10, max_value=100,
-            value=int(A["finance"]["equity_ratio"] * 100),
-            step=5,
-            help="융자 외에 본인이 부담하는 비율.",
+            min_value=10.0, max_value=100.0,
+            value=float(A["finance"]["equity_ratio"] * 100),
+            step=0.5,
+            help="융자 외에 본인이 부담하는 비율. PDF 기준 23.5%.",
         )
 
         loan_option_keys = list(A["finance"]["loan_options"].keys())

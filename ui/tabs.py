@@ -57,13 +57,14 @@ def render_headline_tab(result: AnalysisResult, analysis: EconomicAnalysis):
 
     st.divider()
 
-    # 큰 숫자 4개
+    # 큰 숫자 4개 (만원 단위로 압축 표시)
     col1, col2, col3, col4 = st.columns(4)
     annual_net = result.npv_total_annualized
+    delta_vs_crop = annual_net - result.annual_crop_revenue_base
     col1.metric(
         "연간 순이익 (벼+태양광)",
-        f"{annual_net:,.0f} 천원",
-        delta=f"벼만 재배 대비 +{annual_net - result.annual_crop_revenue_base:,.0f} 천원",
+        _to_manwon_int(annual_net),
+        delta=f"벼만 재배 대비 +{_to_manwon_int(delta_vs_crop)}",
     )
     col2.metric(
         "투자 회수 기간",
@@ -569,38 +570,65 @@ def render_expert_tab(result: AnalysisResult, analysis: EconomicAnalysis, builde
     st.caption("발전단가 × 금리 × 설치비 모든 조합")
 
     composite = builder.composite_scenarios()
+
+    # 설치비 라벨을 사람이 읽기 좋게 (정렬도 좌→우 증가 순)
+    def _cost_label(mult: float) -> str:
+        if mult == 1.0:
+            return "현행 (0%)"
+        return f"{(mult-1)*100:+.0f}%"
+
     df = pd.DataFrame([{
         "시나리오": r.name,
         "발전단가": r.params["price"],
         "금리(%)": f"{r.params['rate']*100:.2f}",
-        "설치비": f"{(r.params['cost_mult']-1)*100:+.0f}%",
+        "설치비": _cost_label(r.params["cost_mult"]),
         "B/C": r.bc,
     } for r in composite])
 
-    # 히트맵
+    # 히트맵: 설치비를 -15% → 현행 → +15% 순서로 정렬
     pivot = df.pivot_table(
         index=["발전단가", "금리(%)"],
         columns="설치비",
         values="B/C",
         aggfunc="first",
     )
+    cost_order = ["-15%", "현행 (0%)", "+15%"]
+    pivot = pivot[[c for c in cost_order if c in pivot.columns]]
+
+    # 명시적 str 변환 + categorical 축 지정 (ArrowStringArray 호환성 이슈 회피)
+    x_labels = [str(c) for c in pivot.columns]
+    y_labels = [f"{p}원/kWh · 금리 {r}%" for p, r in pivot.index]
+    z_values = pivot.values.astype(float).tolist()
 
     fig_heatmap = go.Figure(data=go.Heatmap(
-        z=pivot.values,
-        x=[str(c) for c in pivot.columns],
-        y=[f"{p}원 / {r}%" for p, r in pivot.index],
+        z=z_values,
+        x=x_labels,
+        y=y_labels,
         colorscale=[(0, "#dc2626"), (0.5, "#fbbf24"), (1, "#16a34a")],
         zmin=0.9, zmax=1.5, zmid=1.2,
-        text=pivot.values,
-        texttemplate="%{text:.2f}",
-        textfont={"size": 14},
-        colorbar=dict(title="B/C"),
+        text=[[f"{v:.2f}" for v in row] for row in z_values],
+        texttemplate="%{text}",
+        textfont={"size": 16, "color": "#000"},
+        colorbar=dict(title="B/C", tickformat=".2f"),
+        hovertemplate="<b>%{y}</b><br>설치비 %{x}<br>B/C = %{z:.3f}<extra></extra>",
+        xgap=2, ygap=2,
     ))
     fig_heatmap.update_layout(
-        height=400,
-        xaxis_title="설치비 변동",
-        yaxis_title="발전단가 / 금리",
-        margin=dict(l=40, r=40, t=20, b=40),
+        height=480,
+        xaxis=dict(
+            title="설치비 변동 (← 절감 | 증가 →)",
+            type="category",
+            categoryorder="array",
+            categoryarray=x_labels,
+            tickfont=dict(size=13),
+        ),
+        yaxis=dict(
+            title="발전단가 / 금리",
+            type="category",
+            autorange="reversed",  # 첫 행을 위로
+            tickfont=dict(size=12),
+        ),
+        margin=dict(l=40, r=40, t=30, b=60),
     )
     st.plotly_chart(fig_heatmap, use_container_width=True)
 
@@ -627,6 +655,46 @@ def render_expert_tab(result: AnalysisResult, analysis: EconomicAnalysis, builde
         "판정": ("🟢" if r.bc >= 1.2 else "🟡" if r.bc >= 1.0 else "🔴"),
     } for r in risk])
     st.dataframe(df_risk, hide_index=True, use_container_width=True)
+
+    st.divider()
+
+    # 농지법 비교 — 개정 효과 가시화
+    st.subheader("📜 농지법 개정 영향 비교")
+    st.caption("구법(8년) vs 현행(2026.05 개정, 23년)이 수익성에 미친 영향")
+
+    # 구법 8년 + 잡종지 전환 후 20년 시나리오를 재현
+    from core.calculator import EconomicAnalysis, LandLawInput
+    import copy
+
+    law_scenarios = [
+        ("구법 8년 운영", LandLawInput(max_operation_years=8)),
+        ("구법 + 잡종지 전환 20년", LandLawInput(max_operation_years=20, conversion_tax_per_year=462)),
+        ("개정 23년 (현행)", LandLawInput(max_operation_years=23)),
+    ]
+    rows = []
+    for name, ll in law_scenarios:
+        a = EconomicAnalysis(
+            facility=analysis.facility, cost=analysis.cost, finance=analysis.finance,
+            price=analysis.price, opex=analysis.opex, crop=analysis.crop,
+            land_law=ll, discount_rate=analysis.discount_rate,
+        )
+        r = a.run()
+        rows.append({
+            "시나리오": name,
+            "운영기간": f"{ll.max_operation_years}년",
+            "B/C": f"{r.bc_ratio:.2f}",
+            "IRR": f"{r.irr*100:.1f}%" if r.irr else "—",
+            "회수기간": f"{r.payback_year:.1f}년" if r.payback_year else "—",
+            "연간 순이익": f"{round(r.npv_total_annualized/10):,}만원",
+            "판정": ("🟢 양호" if r.bc_ratio >= 1.2 else
+                   "🟡 경계" if r.bc_ratio >= 1.0 else "🔴 손실"),
+        })
+    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+    st.info(
+        "💡 **농지법 개정 효과**: 같은 농지·시설 조건에서도 운영 기간이 8년 → 23년으로 늘면 "
+        "발전 수익을 더 길게 회수할 수 있어 B/C가 크게 개선됩니다. "
+        "잡종지 전환은 추가 세금이 발생하지만 일시사용보다 안정적."
+    )
 
     st.divider()
     st.markdown("""
