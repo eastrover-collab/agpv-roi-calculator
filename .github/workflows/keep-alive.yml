@@ -22,7 +22,7 @@ jobs:
       - name: Ping Streamlit app
         env:
           # ⚠️ 배포 후 실제 URL로 교체 (또는 GitHub Secret 사용)
-          APP_URL: ${{ secrets.STREAMLIT_APP_URL || 'https://agpv-roi-calculator.streamlit.app' }}
+          APP_URL: ${{ secrets.STREAMLIT_APP_URL || 'https://agpv-roi-calculator-2000m.streamlit.app' }}
         run: |
           echo "Pinging $APP_URL"
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 "$APP_URL/" || echo "000")

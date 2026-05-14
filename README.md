@@ -68,7 +68,8 @@ streamlit run app.py
    - **Python version**: `3.12` (또는 3.11)
    - **App URL** (선택): `agpv-roi-calculator` (기본 추천명 그대로 OK)
 4. **Deploy!** 클릭 → 약 3~5분 빌드 → 발급 URL 표시
-   - 예: `https://agpv-roi-calculator.streamlit.app`
+
+**현재 배포 URL**: https://agpv-roi-calculator-2000m.streamlit.app/
 
 ### 2단계: Sleep 방지 (선택)
 
@@ -87,7 +88,7 @@ streamlit run app.py
 <!-- 영농형 태양광 경제성 계산기 임베드 -->
 <div style="position: relative; width: 100%; min-height: 900px;">
   <iframe
-    src="https://agpv-roi-calculator.streamlit.app/?embed=true&embed_options=hide_loading_screen,show_padding,light_theme"
+    src="https://agpv-roi-calculator-2000m.streamlit.app/?embed=true&embed_options=hide_loading_screen,show_padding,light_theme"
     style="width: 100%; height: 100%; min-height: 900px; border: 0; border-radius: 8px;"
     allowfullscreen
     loading="lazy"
@@ -97,7 +98,7 @@ streamlit run app.py
 
 <p style="font-size: 0.85em; color: #6b7280; margin-top: 8px;">
   💡 모바일에서는 별도 창으로 열어 사용하시면 더 편합니다 →
-  <a href="https://agpv-roi-calculator.streamlit.app" target="_blank" rel="noopener">새 창에서 열기</a>
+  <a href="https://agpv-roi-calculator-2000m.streamlit.app" target="_blank" rel="noopener">새 창에서 열기</a>
 </p>
 ```
 
