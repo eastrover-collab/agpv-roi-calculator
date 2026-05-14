@@ -163,6 +163,45 @@ class TestTable41Basics:
         # 총 상환액 = 원금 150,000 + 이자 44,100 = 194,100
         assert pct_diff(sched.total_payment, 194_100) < 0.001
 
+    def test_npv_power_uses_yearly_generation_decline(self):
+        """NPV 발전수익은 운영기간 평균값이 아니라 연도별 효율 감소 발전량을 할인."""
+        facility = FacilityInput(
+            area_m2=2000,
+            capacity_kw=100,
+            daily_gen_hours=1,
+            efficiency_decline=0.5,
+            lifetime_years=3,
+        )
+        analysis = EconomicAnalysis(
+            facility=facility,
+            cost=CostInput(construction=0, permits=0),
+            finance=FinanceInput(equity_ratio=1, loan_rate=0.0, grace_years=0, repay_years=1),
+            price=PowerPriceInput(track="ppa", ppa_fixed_krw_per_kwh=1000),
+            opex=OpexInput(
+                inverter_replace=0,
+                electrical_mgmt=0,
+                insurance=0,
+                waste_disposal=0,
+                utility_repair=0,
+            ),
+            crop=CropInput(base_income_thousand_krw_per_2000m2=0, yield_reduction=0),
+            land_law=LandLawInput(max_operation_years=3),
+            discount_rate=0.1,
+        )
+
+        result = analysis.run()
+        expected = sum(
+            analysis.yearly_generation(t) * analysis.price.unit_price / 1000 / (1 + 0.1) ** t
+            for t in range(1, 4)
+        )
+        avg_based = sum(
+            result.annual_power_revenue / (1 + 0.1) ** t
+            for t in range(1, 4)
+        )
+
+        assert result.npv_power == pytest.approx(expected)
+        assert result.npv_power != pytest.approx(avg_based)
+
 
 # ──────────────────────────────────────────────────────────────────
 # 표 4-4: 현 농지법 (8년 / 잡종지 20년)

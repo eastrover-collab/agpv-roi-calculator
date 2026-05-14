@@ -344,7 +344,7 @@ class EconomicAnalysis:
         op_years = self.land_law.max_operation_years
         r = self.discount_rate
 
-        # 평균 연간 발전량/수익 (운영기간 평균)
+        # 표시용 평균 연간 발전량/수익 (운영기간 평균)
         avg_gen = self.average_annual_generation(op_years)
         avg_power_revenue = avg_gen * self.price.unit_price / 1000  # 천원
 
@@ -366,7 +366,8 @@ class EconomicAnalysis:
         for t in range(1, analysis_years + 1):
             df = 1 / (1 + r) ** t
             if t <= op_years:
-                pv_power_revenue += avg_power_revenue * df
+                power_revenue = self.yearly_generation(t) * self.price.unit_price / 1000
+                pv_power_revenue += power_revenue * df
                 pv_opex += annual_opex_for_npv * df
                 pv_crop += crop_with_reduction * df
             else:
