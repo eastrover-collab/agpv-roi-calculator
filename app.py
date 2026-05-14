@@ -50,6 +50,59 @@ st.markdown("""
     .stoplight-yellow { color: #ca8a04; font-weight: 700; }
     .stoplight-red { color: #dc2626; font-weight: 700; }
 
+    /* 메인 탭 — 기본 Streamlit 탭보다 크게, 버튼처럼 보이게 */
+    [data-testid="stTabs"] [role="tablist"] {
+        gap: 8px;
+        flex-wrap: wrap;
+        border-bottom: 1px solid #e5e7eb;
+        padding-bottom: 8px;
+    }
+    [data-testid="stTabs"] [role="tab"] {
+        min-height: 44px;
+        padding: 10px 14px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px 8px 0 0;
+        background-color: #f9fafb;
+        font-size: 1rem;
+        font-weight: 700;
+        color: #374151;
+    }
+    [data-testid="stTabs"] [role="tab"][aria-selected="true"] {
+        background-color: #e0f2fe;
+        border-color: #0284c7;
+        color: #075985;
+    }
+    [data-testid="stTabs"] [role="tab"] p {
+        font-size: 1rem;
+        font-weight: 700;
+    }
+
+    /* 입력 모드 선택 — 간편/전문가를 큰 토글처럼 표시 */
+    section[data-testid="stSidebar"] [data-testid="stSegmentedControl"] {
+        margin-top: 6px;
+        margin-bottom: 14px;
+    }
+    section[data-testid="stSidebar"] [data-testid="stSegmentedControl"] [role="radiogroup"] {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        width: 100%;
+    }
+    section[data-testid="stSidebar"] [data-testid="stSegmentedControl"] label {
+        min-height: 44px;
+        justify-content: center;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        background-color: #f9fafb;
+        font-size: 1rem;
+        font-weight: 800;
+    }
+    section[data-testid="stSidebar"] [data-testid="stSegmentedControl"] label:has(input:checked) {
+        background-color: #dcfce7;
+        border-color: #16a34a;
+        color: #14532d;
+    }
+
     /* 사이드바 입력 4단계 헤더 — 단계별 색상 구분 */
     section[data-testid="stSidebar"] [data-testid="stExpander"] {
         border: 1px solid #e5e7eb;
@@ -103,6 +156,14 @@ st.markdown("""
         }
         [data-testid="stMetricLabel"] {
             font-size: 0.85rem !important;
+        }
+        [data-testid="stTabs"] [role="tab"] {
+            min-height: 42px;
+            padding: 8px 10px;
+            font-size: 0.9rem;
+        }
+        [data-testid="stTabs"] [role="tab"] p {
+            font-size: 0.9rem;
         }
     }
     @media (max-width: 600px) {
@@ -179,6 +240,16 @@ st.caption(
 with st.sidebar:
     st.header("🧮 우리 농지 조건 입력")
     st.caption("입력값을 바꾸면 결과가 실시간으로 업데이트됩니다.")
+    advanced_qp_keys = {"c", "h", "b", "s", "x", "w", "p", "r"}
+    default_mode = "전문가" if advanced_qp_keys.intersection(_qp.keys()) else "간편"
+    mode_qp = _qp_str("m", "expert" if default_mode == "전문가" else "simple")
+    input_mode = st.segmented_control(
+        "입력 모드",
+        options=["간편", "전문가"],
+        default="전문가" if mode_qp == "expert" else "간편",
+        help="간편 모드는 추천값을 자동 적용하고, 전문가 모드는 세부 가정을 직접 조정합니다.",
+    )
+    is_expert_mode = input_mode == "전문가"
 
     # 1. 농지 정보
     with st.expander("📍 1단계: 농지 정보", expanded=True):
@@ -200,20 +271,26 @@ with st.sidebar:
     with st.expander("⚡ 2단계: 시설 정보", expanded=True):
         # 면적 기반 자동 추천 (PDF: 2000㎡ → 99kW, 약 0.05 kW/㎡)
         recommended_kw = round(area_m2 * 99 / 2000)
-        capacity_kw = st.number_input(
-            "시설 용량 (kW)",
-            min_value=10, max_value=1000,
-            value=_qp_int("c", recommended_kw),
-            step=1,
-            help=f"면적 기반 추천: {recommended_kw}kW. 직접 조정 가능.",
-        )
-        daily_hours = st.slider(
-            "1일 평균 발전시간 (h)",
-            min_value=2.5, max_value=5.0,
-            value=_qp_float("h", float(A["facility"]["daily_gen_hours"])),
-            step=0.1,
-            help="전남 평균 3.5~3.8h. 일사량이 좋은 해남·영광은 3.8~4.0h.",
-        )
+        if is_expert_mode:
+            capacity_kw = st.number_input(
+                "시설 용량 (kW)",
+                min_value=10, max_value=1000,
+                value=_qp_int("c", recommended_kw),
+                step=1,
+                help=f"면적 기반 추천: {recommended_kw}kW. 직접 조정 가능.",
+            )
+            daily_hours = st.slider(
+                "1일 평균 발전시간 (h)",
+                min_value=2.5, max_value=5.0,
+                value=_qp_float("h", float(A["facility"]["daily_gen_hours"])),
+                step=0.1,
+                help="전남 평균 3.5~3.8h. 일사량이 좋은 해남·영광은 3.8~4.0h.",
+            )
+        else:
+            capacity_kw = recommended_kw
+            daily_hours = float(A["facility"]["daily_gen_hours"])
+            st.metric("추천 시설 용량", f"{capacity_kw:,} kW")
+            st.caption(f"1일 평균 발전시간은 전남 기준 {daily_hours:.1f}h를 적용합니다.")
 
     # 3. 자금 조달
     with st.expander("💰 3단계: 자금 조달", expanded=True):
@@ -221,14 +298,18 @@ with st.sidebar:
         base_cost = int(A["cost"]["total"])      # 2026: 210,000 천원
         base_kw = int(A["facility"]["capacity_kw"])  # 99 kW
         recommended_cost = round(capacity_kw / base_kw * base_cost)
-        total_cost = st.number_input(
-            "총 사업비 (천원)",
-            min_value=10_000, max_value=1_000_000,
-            value=_qp_int("b", recommended_cost),
-            step=1_000,
-            help=f"용량 기반 추천: {recommended_cost:,}천원 "
-                 f"(2026 기준 kW당 약 {base_cost/base_kw/10:.0f}만원).",
-        )
+        if is_expert_mode:
+            total_cost = st.number_input(
+                "총 사업비 (천원)",
+                min_value=10_000, max_value=1_000_000,
+                value=_qp_int("b", recommended_cost),
+                step=1_000,
+                help=f"용량 기반 추천: {recommended_cost:,}천원 "
+                     f"(2026 기준 kW당 약 {base_cost/base_kw/10:.0f}만원).",
+            )
+        else:
+            total_cost = recommended_cost
+            st.metric("추천 총 사업비", f"{total_cost:,} 천원")
         st.caption(f"≈ **{total_cost:,}** 천원 ({total_cost/100_000:.2f}억원)")
         st.caption("운영비는 시설 용량과 총 사업비에 맞춰 자동 보정됩니다.")
         equity_pct = st.slider(
@@ -252,7 +333,7 @@ with st.sidebar:
         loan_rate = A["finance"]["loan_options"][loan_choice]["rate"]
         # URL로 사용자 정의 금리가 들어왔으면 자동 활성화
         url_custom_rate = "r" in _qp and abs(_qp_float("r", loan_rate) - loan_rate) > 1e-6
-        custom_rate = st.checkbox("금리 직접 입력", value=url_custom_rate)
+        custom_rate = st.checkbox("금리 직접 입력", value=url_custom_rate) if is_expert_mode else False
         if custom_rate:
             loan_rate = st.number_input(
                 "융자 금리 (%)",
@@ -270,17 +351,24 @@ with st.sidebar:
             "발전 가격 트랙",
             options=["rps", "ppa"],
             index=0 if default_track == "rps" else 1,
-            format_func=lambda t: {
-                "rps": "RPS 트랙 (SMP + REC × 1.2)",
-                "ppa": "PPA 트랙 (고정가격계약)",
-            }[t],
+            format_func=lambda t: (
+                {
+                    "rps": "변동형 판매가격",
+                    "ppa": "고정가격계약",
+                }[t]
+                if not is_expert_mode
+                else {
+                    "rps": "RPS 트랙 (SMP + REC × 1.2)",
+                    "ppa": "PPA 트랙 (고정가격계약)",
+                }[t]
+            ),
             help=(
                 "**RPS**: 2026년 이전 준공 사업. SMP + REC 합산.\n\n"
                 "**PPA**: 2026년 RPS 일몰 후 신규 사업. 고정가격계약."
             ),
             horizontal=False,
         )
-        if track == "rps":
+        if track == "rps" and is_expert_mode:
             col1, col2 = st.columns(2)
             with col1:
                 smp = st.number_input(
@@ -307,7 +395,7 @@ with st.sidebar:
             unit_price = smp + rec * weight
             st.metric("최종 발전단가", f"{unit_price:.1f} 원/kWh")
             ppa_price = _qp_float("p", float(A["power_price"]["ppa_track"]["fixed_price_krw_per_kwh"]))
-        else:
+        elif track == "ppa" and is_expert_mode:
             ppa_price = st.number_input(
                 "고정가격계약 단가 (원/kWh)",
                 min_value=80.0, max_value=250.0,
@@ -319,9 +407,18 @@ with st.sidebar:
             rec = _qp_float("x", float(A["power_price"]["rps_track"]["rec_krw_per_kwh"]))
             weight = _qp_float("w", float(A["power_price"]["rps_track"]["weight"]))
             st.metric("최종 발전단가", f"{ppa_price:.1f} 원/kWh")
+        else:
+            smp = float(A["power_price"]["rps_track"]["smp_krw_per_kwh"])
+            rec = float(A["power_price"]["rps_track"]["rec_krw_per_kwh"])
+            weight = float(A["power_price"]["rps_track"]["weight"])
+            ppa_price = float(A["power_price"]["ppa_track"]["fixed_price_krw_per_kwh"])
+            unit_price = smp + rec * weight if track == "rps" else ppa_price
+            st.metric("추천 발전단가", f"{unit_price:.1f} 원/kWh")
+            st.caption("세부 단가는 전문가 모드에서 조정할 수 있습니다.")
 
     # ─── URL에 현재 입력값 자동 동기화 ───
     _qp.update({
+        "m": "expert" if is_expert_mode else "simple",
         "a": str(int(area_m2)),
         "c": str(int(capacity_kw)),
         "h": f"{daily_hours:.1f}",
