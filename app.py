@@ -154,14 +154,17 @@ with st.sidebar:
 
     # 3. 자금 조달
     with st.expander("💰 3단계: 자금 조달", expanded=True):
-        # 면적 비례 사업비 (PDF: 196,000 천원 @ 99kW)
-        recommended_cost = round(capacity_kw / 99 * 196_000)
+        # 용량 비례 사업비 (assumptions.yaml의 99kW 기준값을 base로 비례 산정)
+        base_cost = int(A["cost"]["total"])      # 2026: 210,000 천원
+        base_kw = int(A["facility"]["capacity_kw"])  # 99 kW
+        recommended_cost = round(capacity_kw / base_kw * base_cost)
         total_cost = st.number_input(
             "총 사업비 (천원)",
             min_value=10_000, max_value=1_000_000,
             value=recommended_cost,
             step=1_000,
-            help=f"용량 기반 추천: {recommended_cost:,}천원 (PDF 기준 kW당 약 198만원).",
+            help=f"용량 기반 추천: {recommended_cost:,}천원 "
+                 f"(2026 기준 kW당 약 {base_cost/base_kw/10:.0f}만원).",
         )
         st.caption(f"≈ **{total_cost:,}** 천원 ({total_cost/100_000:.2f}억원)")
         equity_pct = st.slider(
