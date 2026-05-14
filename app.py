@@ -48,6 +48,43 @@ st.markdown("""
     .stoplight-green { color: #16a34a; font-weight: 700; }
     .stoplight-yellow { color: #ca8a04; font-weight: 700; }
     .stoplight-red { color: #dc2626; font-weight: 700; }
+
+    /* 사이드바 입력 4단계 헤더 — 단계별 색상 구분 */
+    section[data-testid="stSidebar"] [data-testid="stExpander"] {
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        overflow: hidden;
+        margin-bottom: 8px;
+    }
+    section[data-testid="stSidebar"] [data-testid="stExpander"] summary,
+    section[data-testid="stSidebar"] [data-testid="stExpander"] details > div:first-child {
+        padding: 8px 12px !important;
+        font-weight: 600;
+    }
+    /* 1단계: 농지 정보 — 하늘색 (Sky) */
+    section[data-testid="stSidebar"] [data-testid="stExpander"]:nth-of-type(1) summary,
+    section[data-testid="stSidebar"] [data-testid="stExpander"]:nth-of-type(1) details > div:first-child {
+        background-color: #dbeafe !important;
+        border-left: 4px solid #2563eb;
+    }
+    /* 2단계: 시설 정보 — 호박색 (Amber) */
+    section[data-testid="stSidebar"] [data-testid="stExpander"]:nth-of-type(2) summary,
+    section[data-testid="stSidebar"] [data-testid="stExpander"]:nth-of-type(2) details > div:first-child {
+        background-color: #fef3c7 !important;
+        border-left: 4px solid #d97706;
+    }
+    /* 3단계: 자금 조달 — 분홍색 (Rose) */
+    section[data-testid="stSidebar"] [data-testid="stExpander"]:nth-of-type(3) summary,
+    section[data-testid="stSidebar"] [data-testid="stExpander"]:nth-of-type(3) details > div:first-child {
+        background-color: #fce7f3 !important;
+        border-left: 4px solid #db2777;
+    }
+    /* 4단계: 발전 가격 — 녹색 (Emerald) */
+    section[data-testid="stSidebar"] [data-testid="stExpander"]:nth-of-type(4) summary,
+    section[data-testid="stSidebar"] [data-testid="stExpander"]:nth-of-type(4) details > div:first-child {
+        background-color: #d1fae5 !important;
+        border-left: 4px solid #059669;
+    }
 </style>
 """, unsafe_allow_html=True)
 
