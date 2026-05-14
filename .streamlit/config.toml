@@ -1,0 +1,25 @@
+# Streamlit 앱 설정 — 영농형 태양광 경제성 계산기
+# Streamlit Cloud 배포 시 자동 적용됨
+
+[theme]
+# KIFC 친화 컬러 (농업·지속가능성)
+primaryColor = "#16a34a"          # green-600 (수익성 신호등 색상과 통일)
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f8fafc"  # 슬레이트-50 (사이드바)
+textColor = "#0f172a"
+font = "sans serif"
+
+[server]
+headless = true
+runOnSave = false
+# iframe 임베드 허용을 위한 설정
+enableCORS = true
+enableXsrfProtection = false
+
+[browser]
+gatherUsageStats = false
+serverAddress = "0.0.0.0"
+
+[client]
+toolbarMode = "minimal"           # iframe에선 도구모음 최소화
+showSidebarNavigation = false     # 사이드바 자동 네비게이션 비활성화

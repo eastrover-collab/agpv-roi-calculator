@@ -1,0 +1,32 @@
+# Streamlit Cloud 무료 플랜 sleep 방지
+# 12시간 트래픽 없으면 hibernate되어 첫 방문 시 10~30초 콜드스타트.
+# 이 워크플로우는 6시간마다 앱을 ping하여 항상 깨어있게 유지.
+#
+# 설정 방법:
+# 1. Streamlit Cloud 배포 후 발급된 URL을 아래 APP_URL에 입력
+# 2. 또는 GitHub Settings → Secrets → STREAMLIT_APP_URL 등록
+#
+# 무료 GitHub Actions 한도: 월 2000분 (이 워크플로우는 월 4분 사용)
+
+name: keep-streamlit-awake
+
+on:
+  schedule:
+    - cron: '0 0,6,12,18 * * *'   # UTC 매 6시간 (한국 09/15/21/03시)
+  workflow_dispatch:                # 수동 실행 허용
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Streamlit app
+        env:
+          # ⚠️ 배포 후 실제 URL로 교체 (또는 GitHub Secret 사용)
+          APP_URL: ${{ secrets.STREAMLIT_APP_URL || 'https://agpv-roi-calculator.streamlit.app' }}
+        run: |
+          echo "Pinging $APP_URL"
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 "$APP_URL/" || echo "000")
+          echo "HTTP response: $HTTP_CODE"
+          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "000" ]; then
+            echo "::warning::App returned $HTTP_CODE — Streamlit may be hibernating or down"
+          fi

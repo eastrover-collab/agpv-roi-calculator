@@ -1,0 +1,8 @@
+# 개발용 추가 의존성 (로컬 테스트·PDF 생성·재무 함수)
+# 설치: pip install -r requirements.txt -r requirements-dev.txt
+
+-r requirements.txt
+
+pytest>=7.4,<9.0
+numpy-financial>=1.0
+reportlab>=4.0           # Phase 4 PDF 보고서 생성용
