@@ -175,7 +175,7 @@ def build_summary_pdf(
         )
         return tbl
 
-    def draw_footer_logo(canvas, _doc):
+    def draw_header_logo(canvas, _doc):
         if not KIFC_LOGO_PATH.exists():
             return
 
@@ -183,8 +183,8 @@ def build_summary_pdf(
         image_width, image_height = reader.getSize()
         logo_width = 32 * mm
         logo_height = logo_width * image_height / image_width
-        x = (doc.pagesize[0] - logo_width) / 2
-        y = 5 * mm
+        x = doc.pagesize[0] - doc.rightMargin - logo_width
+        y = doc.pagesize[1] - 12 * mm
 
         canvas.saveState()
         canvas.drawImage(
@@ -289,6 +289,6 @@ def build_summary_pdf(
             ]
         )
 
-    doc.build(story, onFirstPage=draw_footer_logo, onLaterPages=draw_footer_logo)
+    doc.build(story, onFirstPage=draw_header_logo, onLaterPages=draw_header_logo)
     buffer.seek(0)
     return buffer.getvalue()
