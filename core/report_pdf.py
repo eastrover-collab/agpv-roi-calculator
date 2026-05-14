@@ -153,9 +153,23 @@ def build_summary_pdf(
         )
         return Paragraph(escaped, styles[style])
 
+    def scaled_widths(widths: list[float] | None) -> list[float] | None:
+        if not widths:
+            return None
+
+        total = sum(widths)
+        if total <= 0:
+            return widths
+        return [width * doc.width / total for width in widths]
+
     def table(rows: list[list[str]], widths: list[float] | None = None) -> Table:
         converted = [[para(cell) for cell in row] for row in rows]
-        tbl = Table(converted, colWidths=widths, hAlign="LEFT", repeatRows=1)
+        tbl = Table(
+            converted,
+            colWidths=scaled_widths(widths),
+            hAlign="LEFT",
+            repeatRows=1,
+        )
         tbl.setStyle(
             TableStyle(
                 [
