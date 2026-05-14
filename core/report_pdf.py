@@ -61,10 +61,10 @@ def build_summary_pdf(
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import mm
+        from reportlab.lib.utils import ImageReader
         from reportlab.pdfbase.cidfonts import UnicodeCIDFont
         from reportlab.pdfbase.pdfmetrics import registerFont
         from reportlab.platypus import (
-            Image,
             Paragraph,
             SimpleDocTemplate,
             Spacer,
@@ -175,15 +175,28 @@ def build_summary_pdf(
         )
         return tbl
 
-    def logo_image():
+    def draw_footer_logo(canvas, _doc):
         if not KIFC_LOGO_PATH.exists():
-            return None
+            return
 
-        logo = Image(str(KIFC_LOGO_PATH))
-        logo.drawWidth = 54 * mm
-        logo.drawHeight = logo.drawWidth * logo.imageHeight / logo.imageWidth
-        logo.hAlign = "CENTER"
-        return logo
+        reader = ImageReader(str(KIFC_LOGO_PATH))
+        image_width, image_height = reader.getSize()
+        logo_width = 32 * mm
+        logo_height = logo_width * image_height / image_width
+        x = (doc.pagesize[0] - logo_width) / 2
+        y = 5 * mm
+
+        canvas.saveState()
+        canvas.drawImage(
+            reader,
+            x,
+            y,
+            width=logo_width,
+            height=logo_height,
+            mask="auto",
+            preserveAspectRatio=True,
+        )
+        canvas.restoreState()
 
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
     meta = assumptions.get("meta", {})
@@ -192,12 +205,7 @@ def build_summary_pdf(
     annual_net = result.npv_total_annualized
     delta_vs_crop = annual_net - result.annual_crop_revenue_base
 
-    story = []
-    logo = logo_image()
-    if logo:
-        story.extend([logo, Spacer(1, 5)])
-
-    story.extend([
+    story = [
         para("영농형 태양광 경제성 요약 보고서", "title"),
         para(
             f"생성일 {generated_at} · 데이터 기준 {meta.get('data_date', '확인 필요')} · "
@@ -271,7 +279,7 @@ def build_summary_pdf(
             "한국에너지공단, 지자체, 금융기관, 시공사와 사업 조건을 별도 확인하세요.",
             "small",
         ),
-    ])
+    ]
 
     if share_url:
         story.extend(
@@ -281,6 +289,6 @@ def build_summary_pdf(
             ]
         )
 
-    doc.build(story)
+    doc.build(story, onFirstPage=draw_footer_logo, onLaterPages=draw_footer_logo)
     buffer.seek(0)
     return buffer.getvalue()
