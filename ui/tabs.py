@@ -633,6 +633,6 @@ def render_expert_tab(result: AnalysisResult, analysis: EconomicAnalysis, builde
     **방법론 참고**
     - 모델: KREI(2023) 4장 + 프로젝트 파이낸스 표준
     - B/C = (자기자본 upfront + PV 운영비) 대비 PV(발전+벼 수익)
-    - 분석 기간: 시설수명 23년 (농지법 개정, 2026.02 시행)
+    - 분석 기간: 시설수명 23년 (농지법 개정, 2026.05.07 국회 통과)
     - 할인율: 융자 금리 (기본 시나리오) / 시중금리 4.5% + 리스크 프리미엄 (리스크 분석)
     """)
