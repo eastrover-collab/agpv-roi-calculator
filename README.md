@@ -23,13 +23,15 @@ agpv_economics/
 │   ├── calculator.py         # NPV/B/C/IRR 엔진
 │   ├── finance.py            # 거치+원금균등 대출 스케줄
 │   ├── monthly.py            # 실제 월별 현금흐름 (regime 블록)
+│   ├── report_pdf.py         # 입력값 기준 PDF 요약 보고서 생성
 │   ├── scenarios.py          # 시나리오 빌더
 │   └── config.py             # assumptions.yaml 로더
 ├── ui/
 │   ├── __init__.py
 │   └── tabs.py               # 6개 탭 렌더링
 ├── tests/
-│   └── test_pdf_replication.py  # KREI(2023) 표 재현 검증
+│   ├── test_pdf_replication.py  # KREI(2023) 표 재현 검증
+│   └── test_report_pdf.py       # PDF 요약 보고서 생성 검증
 ├── requirements.txt          # 프로덕션 의존성
 ├── requirements-dev.txt      # 개발용 (pytest 등)
 └── .github/workflows/
@@ -116,6 +118,7 @@ streamlit run app.py
 - [ ] 사이드바 4단계 색상 표시되는지
 - [ ] 6개 탭 모두 동작 (한눈에 / 월별 / 23년 / 시나리오 / 리스크 / 전문가)
 - [ ] 차트(Plotly)가 정상 렌더링되는지
+- [ ] 요약 보고서 PDF 다운로드가 정상 동작하는지
 - [ ] 하단 KREI(2023) → 2026 비교 expander 동작
 
 ## 출처

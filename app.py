@@ -19,6 +19,7 @@ from core.calculator import (
     scale_opex_for_project,
 )
 from core.config import load_assumptions
+from core.report_pdf import build_summary_pdf
 from core.scenarios import ScenarioBuilder
 from ui.tabs import (
     render_expert_tab,
@@ -523,6 +524,35 @@ builder = ScenarioBuilder(
     land_law=land_law,
     discount_rate=loan_rate,
 )
+
+
+# ──────────────────────────────────────────────────────────────────
+# PDF 보고서 다운로드
+# ──────────────────────────────────────────────────────────────────
+st.divider()
+pdf_col, note_col = st.columns([1, 2])
+with pdf_col:
+    try:
+        pdf_bytes = build_summary_pdf(
+            result=result,
+            analysis=analysis,
+            assumptions=A,
+            share_url=share_url,
+        )
+        st.download_button(
+            "📄 요약 보고서 PDF 받기",
+            data=pdf_bytes,
+            file_name=f"agpv-roi-summary-{A['meta']['version']}.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
+    except RuntimeError as exc:
+        st.warning(str(exc))
+
+with note_col:
+    st.caption(
+        "현재 입력값 기준의 핵심 지표, 연간 수입·지출, NPV 요약을 PDF로 저장합니다."
+    )
 
 
 # ──────────────────────────────────────────────────────────────────
