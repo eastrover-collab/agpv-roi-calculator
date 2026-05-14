@@ -16,6 +16,7 @@ from core.calculator import (
     LandLawInput,
     OpexInput,
     PowerPriceInput,
+    scale_opex_for_project,
 )
 from core.config import load_assumptions
 from core.scenarios import ScenarioBuilder
@@ -229,6 +230,7 @@ with st.sidebar:
                  f"(2026 기준 kW당 약 {base_cost/base_kw/10:.0f}만원).",
         )
         st.caption(f"≈ **{total_cost:,}** 천원 ({total_cost/100_000:.2f}억원)")
+        st.caption("운영비는 시설 용량과 총 사업비에 맞춰 자동 보정됩니다.")
         equity_pct = st.slider(
             "자기자본 비율 (%)",
             min_value=10.0, max_value=100.0,
@@ -376,12 +378,19 @@ price = PowerPriceInput(
     weight=weight,
     ppa_fixed_krw_per_kwh=ppa_price,
 )
-opex = OpexInput(
+base_opex = OpexInput(
     inverter_replace=float(A["opex_thousand_krw"]["inverter_replace"]),
     electrical_mgmt=float(A["opex_thousand_krw"]["electrical_mgmt"]),
     insurance=float(A["opex_thousand_krw"]["insurance"]),
     waste_disposal=float(A["opex_thousand_krw"]["waste_disposal"]),
     utility_repair=float(A["opex_thousand_krw"]["utility_repair"]),
+)
+opex = scale_opex_for_project(
+    base_opex,
+    base_capacity_kw=float(A["facility"]["capacity_kw"]),
+    capacity_kw=capacity_kw,
+    base_total_cost=float(A["cost"]["total"]),
+    total_cost=total_cost,
 )
 crop = CropInput(
     name_kr=A["crops"]["rice"]["name_kr"],
@@ -493,4 +502,3 @@ with st.expander("🔍 KREI(2023) vs 2026 v1.1 상세 비교 및 출처", expand
 
 > 📌 본 계산기는 추정치입니다. 실제 도입 결정 전 한국에너지공단(1855-3020) 또는 농협 상담 권장.
 """)
-

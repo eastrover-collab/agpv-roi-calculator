@@ -101,6 +101,34 @@ class OpexInput:
         )
 
 
+def scale_opex_for_project(
+    base_opex: OpexInput,
+    *,
+    base_capacity_kw: float,
+    capacity_kw: float,
+    base_total_cost: float,
+    total_cost: float,
+) -> OpexInput:
+    """99kW 기준 운영비를 실제 용량/사업비에 맞게 보정.
+
+    항목별 비용 성격을 반영한다.
+    - 인버터·폐기물·수선비: 설비 용량에 비례
+    - 보험료: 총 사업비에 비례
+    - 전기안전관리대행: 고정비 성격이 커서 70% 고정 + 30% 용량비례
+    """
+    capacity_ratio = capacity_kw / base_capacity_kw if base_capacity_kw > 0 else 1.0
+    cost_ratio = total_cost / base_total_cost if base_total_cost > 0 else 1.0
+    electrical_mgmt_ratio = 0.7 + 0.3 * capacity_ratio
+
+    return OpexInput(
+        inverter_replace=base_opex.inverter_replace * capacity_ratio,
+        electrical_mgmt=base_opex.electrical_mgmt * electrical_mgmt_ratio,
+        insurance=base_opex.insurance * cost_ratio,
+        waste_disposal=base_opex.waste_disposal * capacity_ratio,
+        utility_repair=base_opex.utility_repair * capacity_ratio,
+    )
+
+
 @dataclass
 class CropInput:
     """작물 (벼 기본)."""

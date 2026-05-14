@@ -135,6 +135,62 @@ class ScenarioBuilder:
         ))
         return results
 
+    # ─── 현재 입력값 기준 단일요인 시나리오 ─────────────────
+    def current_input_scenarios(self) -> List[ScenarioResult]:
+        """사용자가 입력한 현재 조건을 기준으로 주요 변수를 흔든다.
+
+        농가용 UI에서는 PDF 고정값보다 현재 입력값의 ±변화가 더 유용하다.
+        PDF 표 재현용 시나리오는 single_factor_scenarios()에 보존한다.
+        """
+        base_price = self.price.unit_price
+        base_rate = self.finance.loan_rate
+        lower_rate = max(base_rate - 0.01, 0.001)
+
+        return [
+            ScenarioResult(
+                name="BL",
+                description="현재 입력값",
+                params={"price": base_price, "rate": base_rate, "cost_mult": 1.0},
+                result=self._run(),
+            ),
+            ScenarioResult(
+                name="P-15",
+                description=f"발전단가 15% 하락 ({base_price * 0.85:.1f}원/kWh)",
+                params={"price": base_price * 0.85},
+                result=self._run(price_override=base_price * 0.85),
+            ),
+            ScenarioResult(
+                name="P+15",
+                description=f"발전단가 15% 상승 ({base_price * 1.15:.1f}원/kWh)",
+                params={"price": base_price * 1.15},
+                result=self._run(price_override=base_price * 1.15),
+            ),
+            ScenarioResult(
+                name="C-15",
+                description="설치비 15% 절감",
+                params={"cost_mult": 0.85},
+                result=self._run(cost_multiplier=0.85),
+            ),
+            ScenarioResult(
+                name="C+15",
+                description="설치비 15% 증가",
+                params={"cost_mult": 1.15},
+                result=self._run(cost_multiplier=1.15),
+            ),
+            ScenarioResult(
+                name="R-1",
+                description=f"금리 1%p 인하 ({lower_rate * 100:.2f}%)",
+                params={"rate": lower_rate},
+                result=self._run(loan_rate_override=lower_rate),
+            ),
+            ScenarioResult(
+                name="R+1",
+                description=f"금리 1%p 인상 ({(base_rate + 0.01) * 100:.2f}%)",
+                params={"rate": base_rate + 0.01},
+                result=self._run(loan_rate_override=base_rate + 0.01),
+            ),
+        ]
+
     # ─── 복합요인 시나리오 (PDF 표 4-8) ──────────────────
     def composite_scenarios(self) -> List[ScenarioResult]:
         """18개 조합: 3 (발전단가) × 2 (금리) × 3 (설치비)."""

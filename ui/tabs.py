@@ -398,14 +398,14 @@ def render_simulation_tab(result: AnalysisResult, analysis: EconomicAnalysis):
 # ──────────────────────────────────────────────────────────────────
 
 def render_scenarios_tab(builder: ScenarioBuilder):
-    """단일요인 6개 시나리오 비교."""
-    st.subheader("🔀 단일요인 변화 시나리오")
+    """현재 입력값 기준 단일요인 시나리오 비교."""
+    st.subheader("🔀 현재 조건 기준 시나리오")
     st.caption(
-        "발전가격·설치비·금리가 각각 변할 때 수익성이 어떻게 달라지는지 확인하세요. "
-        "PDF 표 4-7 방식."
+        "현재 입력한 발전가격·설치비·금리를 기준으로 각각 불리하거나 유리하게 변할 때 "
+        "수익성이 어떻게 달라지는지 확인하세요."
     )
 
-    results = builder.single_factor_scenarios()
+    results = builder.current_input_scenarios()
 
     # 막대 차트
     fig = go.Figure()
@@ -437,6 +437,9 @@ def render_scenarios_tab(builder: ScenarioBuilder):
     df = pd.DataFrame([{
         "시나리오": r.name,
         "내용": r.description,
+        "발전단가": f"{r.params['price']:.1f}원/kWh" if "price" in r.params else "현재",
+        "금리": f"{r.params['rate']*100:.2f}%" if "rate" in r.params else "현재",
+        "설치비": f"{r.params['cost_mult']*100:.0f}%" if "cost_mult" in r.params else "현재",
         "B/C": f"{r.bc:.2f}",
         "IRR": f"{r.irr*100:.1f}%" if r.irr else "—",
         "회수기간": f"{r.result.payback_year:.1f}년" if r.result.payback_year else "—",

@@ -22,6 +22,7 @@ from core.calculator import (
     LandLawInput,
     OpexInput,
     PowerPriceInput,
+    scale_opex_for_project,
 )
 from core.finance import build_loan_schedule
 from core.scenarios import ScenarioBuilder
@@ -202,6 +203,34 @@ class TestTable41Basics:
         assert result.npv_power == pytest.approx(expected)
         assert result.npv_power != pytest.approx(avg_based)
 
+    def test_opex_scaling_keeps_base_project_values(self, pdf_opex):
+        """기준 99kW/1.96억원 사업에서는 PDF 기준 운영비가 그대로 유지."""
+        scaled = scale_opex_for_project(
+            pdf_opex,
+            base_capacity_kw=99,
+            capacity_kw=99,
+            base_total_cost=196_000,
+            total_cost=196_000,
+        )
+
+        assert scaled == pdf_opex
+
+    def test_opex_scaling_reflects_capacity_and_cost(self, pdf_opex):
+        """용량성 비용은 kW, 보험료는 사업비, 안전관리비는 고정+용량 혼합으로 보정."""
+        scaled = scale_opex_for_project(
+            pdf_opex,
+            base_capacity_kw=99,
+            capacity_kw=198,
+            base_total_cost=196_000,
+            total_cost=294_000,
+        )
+
+        assert scaled.inverter_replace == pytest.approx(2_000)
+        assert scaled.electrical_mgmt == pytest.approx(1_560)
+        assert scaled.insurance == pytest.approx(810)
+        assert scaled.waste_disposal == pytest.approx(500)
+        assert scaled.utility_repair == pytest.approx(840)
+
 
 # ──────────────────────────────────────────────────────────────────
 # 표 4-4: 현 농지법 (8년 / 잡종지 20년)
@@ -296,6 +325,26 @@ class TestTable47SingleFactor:
             print(f"{sr.name:<5}{exp:>8.2f}{sr.bc:>10.2f}{diff:>9.1f}%")
             assert pct_diff(sr.bc, exp) < TOL_PCT, \
                 f"{sr.name}: got {sr.bc:.3f}, expected {exp}"
+
+    def test_current_input_scenarios_are_relative_to_inputs(self, builder):
+        """농가용 시나리오는 PDF 고정값이 아니라 현재 입력값 기준으로 생성."""
+        results = builder.current_input_scenarios()
+        by_name = {r.name: r for r in results}
+
+        base_price = builder.price.unit_price
+        base_rate = builder.finance.loan_rate
+
+        assert [r.name for r in results] == ["BL", "P-15", "P+15", "C-15", "C+15", "R-1", "R+1"]
+        assert by_name["BL"].params["price"] == pytest.approx(base_price)
+        assert by_name["P-15"].params["price"] == pytest.approx(base_price * 0.85)
+        assert by_name["P+15"].params["price"] == pytest.approx(base_price * 1.15)
+        assert by_name["C-15"].params["cost_mult"] == pytest.approx(0.85)
+        assert by_name["C+15"].params["cost_mult"] == pytest.approx(1.15)
+        assert by_name["R-1"].params["rate"] == pytest.approx(max(base_rate - 0.01, 0.001))
+        assert by_name["R+1"].params["rate"] == pytest.approx(base_rate + 0.01)
+
+        assert by_name["P-15"].bc < by_name["BL"].bc < by_name["P+15"].bc
+        assert by_name["C+15"].bc < by_name["BL"].bc < by_name["C-15"].bc
 
 
 # ──────────────────────────────────────────────────────────────────
