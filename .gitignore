@@ -27,3 +27,5 @@ htmlcov/
 dist/
 build/
 *.egg
+launch.json
+.claude/launch.json
