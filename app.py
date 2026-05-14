@@ -19,7 +19,14 @@ from core.calculator import (
 )
 from core.config import load_assumptions
 from core.scenarios import ScenarioBuilder
-from ui.tabs import render_expert_tab, render_headline_tab, render_risk_tab, render_scenarios_tab, render_simulation_tab
+from ui.tabs import (
+    render_expert_tab,
+    render_headline_tab,
+    render_monthly_tab,
+    render_risk_tab,
+    render_scenarios_tab,
+    render_simulation_tab,
+)
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -277,8 +284,9 @@ builder = ScenarioBuilder(
 # ──────────────────────────────────────────────────────────────────
 # 메인 영역: 탭
 # ──────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 한눈에 보기",
+    "💰 월별 통장 흐름",
     "📈 23년 시뮬레이션",
     "🔀 시나리오 비교",
     "⚠️ 리스크 점검",
@@ -289,15 +297,18 @@ with tab1:
     render_headline_tab(result, analysis)
 
 with tab2:
-    render_simulation_tab(result, analysis)
+    render_monthly_tab(analysis)
 
 with tab3:
-    render_scenarios_tab(builder)
+    render_simulation_tab(result, analysis)
 
 with tab4:
-    render_risk_tab(builder, analysis)
+    render_scenarios_tab(builder)
 
 with tab5:
+    render_risk_tab(builder, analysis)
+
+with tab6:
     render_expert_tab(result, analysis, builder)
 
 

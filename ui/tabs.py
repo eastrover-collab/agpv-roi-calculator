@@ -6,7 +6,18 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from core.calculator import AnalysisResult, EconomicAnalysis
+from core.monthly import build_yearly_details, group_into_regimes, upfront_equity
 from core.scenarios import ScenarioBuilder
+
+
+# 천원 → "OO만원" 보기 좋게 (농가 친화)
+def _to_manwon(thousand_krw: float) -> str:
+    """천원 단위 → 만원 보기 좋게 (소수 1자리)."""
+    return f"{thousand_krw / 10:,.1f}만원"
+
+
+def _to_manwon_int(thousand_krw: float) -> str:
+    return f"{round(thousand_krw / 10):,}만원"
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -141,6 +152,157 @@ def render_headline_tab(result: AnalysisResult, analysis: EconomicAnalysis):
 
     for c in comments:
         st.markdown(f"- {c}")
+
+
+# ──────────────────────────────────────────────────────────────────
+# 탭 (신규): 월별 통장 흐름
+# ──────────────────────────────────────────────────────────────────
+
+def render_monthly_tab(analysis: EconomicAnalysis):
+    """실제 매월 통장에 들어오는 돈 — 균등화 안 한 raw cash flow.
+
+    Year 0 자기자본 → Year 1~5 거치(이자만) → Year 6~15 원금상환 → Year 16+ 융자완료
+    """
+    st.subheader("💰 매월 통장에 들어오는 돈 (실제 현금흐름)")
+    st.caption(
+        "B/C 계산용 균등화가 아닌, **실제 매월 통장 흐름**입니다. "
+        "거치 기간(5년) 끝나는 6년차에 부담이 급증하는 점에 주의하세요."
+    )
+
+    # Year 0: 자기자본
+    equity = upfront_equity(analysis)
+    with st.container(border=True):
+        col_emoji, col_main = st.columns([1, 6])
+        col_emoji.markdown("# 🔴")
+        col_main.markdown(f"### Year 0 — 사업 시작 직전")
+        col_main.metric(
+            "자기자본 일시 투입",
+            f"-{_to_manwon_int(equity)}",
+            delta="사업 시작 시점에 한꺼번에 들어가는 돈",
+            delta_color="off",
+        )
+        col_main.caption("💡 융자 외에 농가가 직접 부담하는 초기 자본. 사업비의 "
+                        f"{analysis.finance.equity_ratio*100:.0f}%")
+
+    st.divider()
+
+    # Year 1~ : 운영 기간 블록들
+    details = build_yearly_details(analysis)
+    blocks = group_into_regimes(details)
+
+    st.markdown(f"### 📅 운영 기간 ({len(details)}년) — {len(blocks)}개 구간으로 압축")
+
+    for idx, block in enumerate(blocks):
+        # 신호등
+        if block.monthly_net > 500:  # 월 +50만원 이상
+            icon, color = "🟢", "green"
+        elif block.monthly_net > -100:  # 거의 흑자
+            icon, color = "🟡", "yellow"
+        else:
+            icon, color = "🔴", "red"
+
+        span = (f"Year {block.year_start}" if block.year_start == block.year_end
+                else f"Year {block.year_start}~{block.year_end} ({block.n_years}년간)")
+
+        with st.container(border=True):
+            col_icon, col_title = st.columns([1, 6])
+            col_icon.markdown(f"# {icon}")
+            col_title.markdown(f"### {span} — {block.label}")
+
+            # 핵심 지표
+            c1, c2, c3 = st.columns(3)
+            c1.metric(
+                "매월 통장 흐름 (벼 제외)",
+                f"{'+' if block.monthly_net >= 0 else ''}{_to_manwon(block.monthly_net)}",
+                delta=("흑자" if block.monthly_net > 0 else
+                       "거의 균형" if block.monthly_net > -100 else "적자 위험"),
+                delta_color="normal" if block.monthly_net > 0 else "inverse",
+            )
+            c2.metric(
+                "가을 벼 수확 (일시)",
+                f"+{_to_manwon(block.annual_crop)}",
+                delta="매년 9~10월 수확",
+                delta_color="off",
+            )
+            c3.metric(
+                "연간 순이익 평균",
+                f"{'+' if block.annual_net_avg >= 0 else ''}{_to_manwon_int(block.annual_net_avg)}",
+                delta="벼+태양광 합산, 이벤트 포함",
+                delta_color="normal" if block.annual_net_avg > 0 else "inverse",
+            )
+
+            # 월별 상세
+            with st.expander("📋 월별 항목 상세 보기", expanded=(idx <= 1)):
+                breakdown = pd.DataFrame({
+                    "항목": [
+                        "🌞 발전 수익",
+                        "🏦 대출 상환 (이자+원금)",
+                        "🔧 정기 운영비 (전기·보험·수선)",
+                        "─── 매월 순흐름 ───",
+                    ],
+                    "월 금액": [
+                        f"+{_to_manwon(block.monthly_power)}",
+                        f"-{_to_manwon(block.monthly_loan)}" if block.monthly_loan > 0 else "0원 ✓",
+                        f"-{_to_manwon(block.monthly_other_opex)}",
+                        f"**{'+' if block.monthly_net >= 0 else ''}{_to_manwon(block.monthly_net)}**",
+                    ],
+                })
+                st.dataframe(breakdown, hide_index=True, use_container_width=True)
+
+            # 특별 이벤트
+            if block.events:
+                st.warning("⚠️ **특별 이벤트** (이 구간 내 일시 비용)")
+                for year, name, amount in block.events:
+                    st.markdown(f"- Year {year}: **{name}** {_to_manwon(amount)}")
+
+            # 코멘트
+            comments = _regime_comment(block, analysis)
+            if comments:
+                st.info("💡 " + comments)
+
+    # 전체 흐름 차트 (확인용)
+    st.divider()
+    st.subheader("📊 23년 전체 월별 순흐름 (벼 수확 제외)")
+    st.caption("거치 끝나는 6년차 급변, 융자 완료(16년차) 회복이 한눈에 보입니다.")
+
+    years = [d.year for d in details]
+    monthly_nets = [d.monthly_net_excluding_crop for d in details]
+    colors = ["#16a34a" if m > 500 else "#ca8a04" if m > -100 else "#dc2626"
+              for m in monthly_nets]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=years, y=monthly_nets,
+        marker_color=colors,
+        text=[f"{m/10:+.0f}만" for m in monthly_nets],
+        textposition="outside",
+        name="매월 순흐름",
+    ))
+    fig.add_hline(y=0, line_color="#000", line_width=1)
+    fig.update_layout(
+        height=380,
+        xaxis_title="년차",
+        yaxis_title="매월 순흐름 (천원/월)",
+        showlegend=False,
+        margin=dict(l=40, r=40, t=20, b=40),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _regime_comment(block, analysis: EconomicAnalysis) -> str:
+    """블록 성격에 따른 농가 안내 코멘트."""
+    if block.monthly_power == 0:
+        return "사업 종료. 영농 단독 운영. 시설 폐기 비용 별도 발생 가능."
+    if block.monthly_loan == 0:
+        return "융자 다 갚았습니다! 이제부터 발전 수익은 거의 다 순수익."
+    if block.monthly_loan < 500:
+        return f"거치 기간({analysis.finance.grace_years}년) 동안은 이자만 납부. " \
+               f"매월 부담 가벼움. 그러나 {analysis.finance.grace_years+1}년차부터 원금 상환 시작되면 부담 급증."
+    if block.monthly_net < 0:
+        return "원금 상환 부담으로 매월 흐름이 마이너스. " \
+               "**가을 벼 수확으로 연간 합산은 흑자**일 수 있으나 평상시 현금 부족 주의. " \
+               "비상금 준비 권장."
+    return ""
 
 
 # ──────────────────────────────────────────────────────────────────
