@@ -11,14 +11,14 @@
 #   버튼을 누르고, 45초 동안 페이지를 유지해 WebSocket 으로 active 신호 전달.
 #
 # 비용:
-#   1회 실행 ≈ 2분, 일 4회 → 월 ~240분 사용 (GH Actions 무료 한도 2000분의 12%).
+#   1회 실행 ≈ 2분, 일 3회 → 월 ~180분 사용 (GH Actions 무료 한도 2000분의 9%).
 
 name: keep-streamlit-awake
 
 on:
   schedule:
-    - cron: '0 0,6,12,18 * * *'   # UTC 매 6시간 (한국 09/15/21/03시)
-  workflow_dispatch:                # 수동 실행 허용
+    - cron: '0 0,8,16 * * *'    # UTC 매 8시간 (한국 09/17/01시)
+  workflow_dispatch:              # 수동 실행 허용
 
 jobs:
   wake:
