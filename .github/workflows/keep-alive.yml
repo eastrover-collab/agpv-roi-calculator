@@ -1,12 +1,17 @@
-# Streamlit Cloud 무료 플랜 sleep 방지
-# 12시간 트래픽 없으면 hibernate되어 첫 방문 시 10~30초 콜드스타트.
-# 이 워크플로우는 6시간마다 앱을 ping하여 항상 깨어있게 유지.
+# Streamlit Cloud sleep 방지 — Playwright 기반 실제 브라우저 세션
 #
-# 설정 방법:
-# 1. Streamlit Cloud 배포 후 발급된 URL을 아래 APP_URL에 입력
-# 2. 또는 GitHub Settings → Secrets → STREAMLIT_APP_URL 등록
+# 배경:
+#   기존 curl ping (단순 HTTP GET) 으로는 Streamlit Cloud 의 'active' 카운터를
+#   리셋하지 못함 — 즉시 로그인 redirect(303) 으로 끝나 트래픽으로 안 침.
+#   2026-05 시점 sleep 정책이 강화돼 실제 사용자 세션 (WebSocket 연결) 만
+#   active 로 인정함.
 #
-# 무료 GitHub Actions 한도: 월 2000분 (이 워크플로우는 월 4분 사용)
+# 동작:
+#   매 6시간마다 헤드리스 Chromium 으로 앱 URL 을 열고, 잠들어 있으면 'wake up'
+#   버튼을 누르고, 45초 동안 페이지를 유지해 WebSocket 으로 active 신호 전달.
+#
+# 비용:
+#   1회 실행 ≈ 2분, 일 4회 → 월 ~240분 사용 (GH Actions 무료 한도 2000분의 12%).
 
 name: keep-streamlit-awake
 
@@ -16,17 +21,77 @@ on:
   workflow_dispatch:                # 수동 실행 허용
 
 jobs:
-  ping:
+  wake:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+
     steps:
-      - name: Ping Streamlit app
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Playwright + Chromium
+        run: |
+          pip install --quiet playwright
+          playwright install --with-deps chromium
+
+      - name: Wake Streamlit app with real browser session
         env:
-          # ⚠️ 배포 후 실제 URL로 교체 (또는 GitHub Secret 사용)
           APP_URL: ${{ secrets.STREAMLIT_APP_URL || 'https://agpv-roi-calculator-2000m.streamlit.app' }}
         run: |
-          echo "Pinging $APP_URL"
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 "$APP_URL/" || echo "000")
-          echo "HTTP response: $HTTP_CODE"
-          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "000" ]; then
-            echo "::warning::App returned $HTTP_CODE — Streamlit may be hibernating or down"
-          fi
+          python <<'PYEOF'
+          import os, sys, time
+          from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+
+          url = os.environ["APP_URL"].rstrip("/")
+          print(f"Waking {url} with headless Chromium")
+
+          with sync_playwright() as p:
+              browser = p.chromium.launch(headless=True)
+              ctx = browser.new_context(
+                  viewport={"width": 1280, "height": 720},
+                  user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                             "(KHTML, like Gecko) Chrome/120.0 Safari/537.36 "
+                             "GitHubActions-KeepAlive",
+              )
+              page = ctx.new_page()
+
+              try:
+                  page.goto(url + "/", wait_until="domcontentloaded", timeout=60_000)
+              except PWTimeout:
+                  print("[WARN] initial goto timed out — will still try to wake")
+
+              # If sleeping, Streamlit shows a wake-up dialog. Click it if found.
+              for label in [
+                  "Yes, get this app back up!",
+                  "get this app back up",
+                  "Wake app",
+              ]:
+                  try:
+                      btn = page.get_by_role("button", name=label, exact=False)
+                      if btn.count() > 0:
+                          print(f"[OK] sleeping detected — clicking '{label}'")
+                          btn.first.click(timeout=10_000)
+                          break
+                  except Exception as e:
+                      print(f"[debug] no '{label}' button: {e}")
+
+              # Wait for Streamlit's main app to load (StApp container appears)
+              try:
+                  page.wait_for_selector('[data-testid="stApp"]', timeout=120_000)
+                  print("[OK] StApp container loaded")
+              except PWTimeout:
+                  print("[WARN] StApp not detected within 120s — proceeding anyway")
+
+              # Stay on page so WebSocket counts as active traffic
+              print("[OK] holding session for 45s...")
+              time.sleep(45)
+
+              print(f"final URL: {page.url}")
+              print(f"final title: {page.title()}")
+
+              browser.close()
+
+          print("done.")
+          PYEOF
