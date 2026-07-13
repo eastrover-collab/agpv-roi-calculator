@@ -18,6 +18,9 @@ class FacilityInput:
     daily_gen_hours: float = 3.5
     efficiency_decline: float = 0.011
     lifetime_years: int = 20
+    # 출력제어(curtailment) — 계통 사정으로 발전이 차단되는 연간 비율.
+    # 전남 등 계통 포화 지역의 봄철 경부하기 리스크. 기본 0 = KREI PDF와 동일 가정.
+    curtailment_rate: float = 0.0
 
 
 @dataclass
@@ -247,7 +250,12 @@ class EconomicAnalysis:
         return sum(self.yearly_generation(y) for y in range(1, years + 1)) / years
 
     def yearly_generation(self, year: int) -> float:
-        base = self.facility.capacity_kw * self.facility.daily_gen_hours * 365
+        base = (
+            self.facility.capacity_kw
+            * self.facility.daily_gen_hours
+            * 365
+            * (1 - self.facility.curtailment_rate)
+        )
         return base * (1 - self.facility.efficiency_decline) ** (year - 1)
 
     def loan_schedule(self) -> LoanSchedule:

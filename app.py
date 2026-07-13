@@ -125,11 +125,19 @@ with st.sidebar:
             "벼 단수 감소율(%)", 0, 50,
             int(qp_number("y", A["crops"]["rice"]["yield_reduction"] * 100, 0, 50)), step=1,
         ) / 100
+        curtailment_rate = st.slider(
+            "출력제어 비율(%)", 0.0, 15.0,
+            qp_number("k", A["facility"].get("curtailment_rate", 0.0) * 100, 0, 15), step=.5,
+            help="계통 사정으로 발전이 차단되는 연간 비율. 전남 등 계통 포화 지역은 "
+                 "봄철 경부하기 출력제어 위험이 있습니다. 기본 0%는 KREI(2023)와 동일 가정이며 "
+                 "실적·전망은 한국전력거래소(KPX)·한전 공고를 확인하세요.",
+        ) / 100
 
     QP.update({
         "a": str(area), "b": str(total_cost), "e": f"{equity_pct:.1f}", "t": track,
         "p": f"{sale_price:.1f}", "l": loan_key, "c": str(capacity),
         "h": f"{daily_hours:.1f}", "d": f"{discount_rate*100:.1f}", "y": f"{yield_reduction*100:.0f}",
+        "k": f"{curtailment_rate*100:.1f}",
     })
     share_url = BASE_URL + "?" + urllib.parse.urlencode(QP.to_dict())
     st.link_button("이 조건으로 새 창 열기", share_url, width="stretch")
@@ -140,6 +148,7 @@ facility = FacilityInput(
     area_m2=area, capacity_kw=capacity, daily_gen_hours=daily_hours,
     efficiency_decline=float(A["facility"]["efficiency_decline"]),
     lifetime_years=int(A["facility"]["lifetime_years"]),
+    curtailment_rate=curtailment_rate,
 )
 cost = CostInput(construction=total_cost - A["cost"]["permits"], permits=A["cost"]["permits"])
 finance = FinanceInput(
