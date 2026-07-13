@@ -76,7 +76,7 @@ def render_cashflow_tab(result: AnalysisResult) -> None:
     fig.add_trace(go.Scatter(x=df["연도"], y=df["자기자본 누계"], name="자기자본 누계", line=dict(color="#ca7a27", width=3)))
     fig.add_hline(y=0, line_color="#7a817d", line_dash="dot")
     fig.update_layout(height=410, margin=dict(l=12, r=12, t=24, b=12), yaxis_title="천원", hovermode="x unified")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     details = pd.DataFrame([
         {
@@ -90,7 +90,7 @@ def render_cashflow_tab(result: AnalysisResult) -> None:
         }
         for d in result.annual_cash_flows
     ])
-    st.dataframe(details, hide_index=True, use_container_width=True)
+    st.dataframe(details, hide_index=True, width="stretch")
     st.caption("단위: 천원. 인버터 교체비는 10년차와 20년차에 일시 반영합니다.")
 
 
@@ -113,9 +113,9 @@ def render_sensitivity_tab(builder: ScenarioBuilder) -> None:
     fig = go.Figure(go.Bar(x=df["조건"], y=df["사업 NPV(천원)"], marker_color=colors))
     fig.add_hline(y=0, line_color="#9a3c32", line_dash="dot")
     fig.update_layout(height=390, margin=dict(l=12, r=12, t=24, b=110), yaxis_title="사업 NPV(천원)")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
     st.dataframe(
         df.style.format({"사업 NPV(천원)": "{:,.0f}", "사업 IRR": "{:.1f}%", "자기자본 IRR": "{:.1f}%", "최저 DSCR": "{:.2f}"}, na_rep="—"),
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
     )

@@ -132,7 +132,7 @@ with st.sidebar:
         "h": f"{daily_hours:.1f}", "d": f"{discount_rate*100:.1f}", "y": f"{yield_reduction*100:.0f}",
     })
     share_url = BASE_URL + "?" + urllib.parse.urlencode(QP.to_dict())
-    st.link_button("이 조건으로 새 창 열기", share_url, use_container_width=True)
+    st.link_button("이 조건으로 새 창 열기", share_url, width="stretch")
     st.caption("주소창의 URL을 복사하면 같은 조건을 공유할 수 있습니다.")
 
 
