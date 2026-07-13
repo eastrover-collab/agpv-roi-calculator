@@ -1,4 +1,4 @@
-"""각 탭별 렌더링 함수."""
+"""Streamlit 결과 화면: 요약, 현금흐름, 민감도."""
 from __future__ import annotations
 
 import pandas as pd
@@ -6,704 +6,116 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from core.calculator import AnalysisResult, EconomicAnalysis
-from core.monthly import build_yearly_details, group_into_regimes, upfront_equity
 from core.scenarios import ScenarioBuilder
 
 
-# 천원 → "OO만원" 보기 좋게 (농가 친화)
-def _to_manwon(thousand_krw: float) -> str:
-    """천원 단위 → 만원 보기 좋게 (소수 1자리)."""
-    return f"{thousand_krw / 10:,.1f}만원"
-
-
-def _to_manwon_int(thousand_krw: float) -> str:
-    return f"{round(thousand_krw / 10):,}만원"
-
-
-# ──────────────────────────────────────────────────────────────────
-# 탭 1: 한눈에 보기 (Headline)
-# ──────────────────────────────────────────────────────────────────
-
-def _bc_color(bc: float) -> str:
-    if bc >= 1.2:
-        return "🟢"
-    if bc >= 1.0:
-        return "🟡"
-    return "🔴"
-
-
-def _bc_verdict(bc: float) -> tuple[str, str]:
-    """B/C 값에 따른 평가 메시지."""
-    if bc >= 1.5:
-        return "수익성 매우 좋음", "green"
-    if bc >= 1.2:
-        return "수익성 있음", "green"
-    if bc >= 1.0:
-        return "수익성 경계", "yellow"
-    return "손실 우려", "red"
-
-
-def render_headline_tab(result: AnalysisResult, analysis: EconomicAnalysis):
-    """가장 중요한 결과 — 농가가 가장 먼저 보는 화면."""
-    bc = result.bc_ratio
-    icon = _bc_color(bc)
-    verdict, color = _bc_verdict(bc)
-
-    st.markdown(f"### {icon} 종합 평가: <span class='stoplight-{color}'>{verdict}</span>",
-                unsafe_allow_html=True)
-    st.caption(
-        "B/C 1.2 이상: 수익성 있음 · 1.0~1.2: 경계 · 1.0 미만: 손실 우려"
-    )
-
-    st.divider()
-
-    # 큰 숫자 4개 (만원 단위로 압축 표시)
-    col1, col2, col3, col4 = st.columns(4)
-    annual_net = result.npv_total_annualized
-    delta_vs_crop = annual_net - result.annual_crop_revenue_base
-    col1.metric(
-        "연간 순이익 (벼+태양광)",
-        _to_manwon_int(annual_net),
-        delta=f"벼만 재배 대비 +{_to_manwon_int(delta_vs_crop)}",
-    )
-    col2.metric(
-        "투자 회수 기간",
-        f"{result.payback_year:.1f} 년" if result.payback_year else "—",
-        delta=f"분석 기간 {result.project_years}년 중" if result.payback_year else None,
-    )
-    col3.metric(
-        "내부수익률 (IRR)",
-        f"{result.irr * 100:.1f}%" if result.irr else "—",
-    )
-    col4.metric(
-        "B/C 비율",
-        f"{bc:.2f}",
-        delta="수익성 지표",
-    )
-
-    st.divider()
-
-    # 연간 흐름 요약
-    st.subheader("📥 연간 수입·지출 (운영기간 평균)")
-    col_in, col_out = st.columns(2)
-
-    with col_in:
-        st.markdown("**수입**")
-        df_in = pd.DataFrame({
-            "항목": ["발전 수익", "벼 소득 (단수감소 반영)", "합계"],
-            "금액 (천원/년)": [
-                f"{round(result.annual_power_revenue):,}",
-                f"{round(result.annual_crop_revenue):,}",
-                f"{round(result.annual_power_revenue + result.annual_crop_revenue):,}",
-            ],
-        })
-        st.dataframe(df_in, hide_index=True, use_container_width=True)
-
-    with col_out:
-        st.markdown("**지출 (운영비)**")
-        df_out = pd.DataFrame({
-            "항목": [
-                "자기자본·이자·원금상환",
-                "전기안전관리대행",
-                "보험료",
-                "인버터 교체(연간 분할)",
-                "폐기물 처리",
-                "전기료·수선비",
-                "합계",
-            ],
-            "금액 (천원/년)": [
-                f"{round(result.annual_finance_cost):,}",
-                f"{round(analysis.opex.electrical_mgmt):,}",
-                f"{round(analysis.opex.insurance):,}",
-                f"{round(analysis.opex.inverter_replace):,}",
-                f"{round(analysis.opex.waste_disposal):,}",
-                f"{round(analysis.opex.utility_repair):,}",
-                f"{round(result.annual_opex):,}",
-            ],
-        })
-        st.dataframe(df_out, hide_index=True, use_container_width=True)
-
-    # 종합 코멘트
-    st.divider()
-    st.subheader("💬 종합 코멘트")
-    comments = []
-    if bc >= 1.2:
-        comments.append(f"✅ B/C가 **{bc:.2f}**로 양호합니다. 이 조건이라면 도입을 적극 검토할 수 있습니다.")
-    elif bc >= 1.0:
-        comments.append(f"⚠️ B/C가 **{bc:.2f}**로 경계 수준입니다. 발전가격이나 설치비가 조금만 불리해져도 손실 가능. 시나리오 비교 탭을 확인하세요.")
-    else:
-        comments.append(f"🚨 B/C가 **{bc:.2f}**로 손실 우려가 있습니다. 정책 융자·보조금 확보가 필수.")
-
-    if result.payback_year and result.payback_year < 10:
-        comments.append(f"💰 투자 회수 **{result.payback_year:.1f}년** — 빠른 편입니다.")
-    elif result.payback_year and result.payback_year < 15:
-        comments.append(f"💰 투자 회수 **{result.payback_year:.1f}년** — 중간 수준.")
-    elif result.payback_year:
-        comments.append(f"💰 투자 회수 **{result.payback_year:.1f}년** — 장기 시계가 필요.")
-    else:
-        comments.append("💰 분석 기간 내 투자 회수 어려움.")
-
-    ratio = result.bc_vs_baseline
-    if ratio > 2.5:
-        comments.append(f"🌾 벼만 재배할 때 대비 **{ratio:.1f}배** 수익 — 큰 향상 기대.")
-    elif ratio > 1.5:
-        comments.append(f"🌾 벼만 재배할 때 대비 **{ratio:.1f}배** 수익 — 의미있는 향상.")
-    else:
-        comments.append(f"🌾 벼만 재배할 때 대비 **{ratio:.1f}배** — 향상폭이 크지 않음.")
-
-    for c in comments:
-        st.markdown(f"- {c}")
-
-
-# ──────────────────────────────────────────────────────────────────
-# 탭 (신규): 월별 통장 흐름
-# ──────────────────────────────────────────────────────────────────
-
-def render_monthly_tab(analysis: EconomicAnalysis):
-    """실제 매월 통장에 들어오는 돈 — 균등화 안 한 raw cash flow.
-
-    Year 0 자기자본 → Year 1~5 거치(이자만) → Year 6~15 원금상환 → Year 16+ 융자완료
-    """
-    st.subheader("💰 매월 통장에 들어오는 돈 (실제 현금흐름)")
-    st.caption(
-        "B/C 계산용 균등화가 아닌, **실제 매월 통장 흐름**입니다. "
-        "거치 기간(5년) 끝나는 6년차에 부담이 급증하는 점에 주의하세요."
-    )
-
-    # Year 0: 자기자본
-    equity = upfront_equity(analysis)
-    with st.container(border=True):
-        col_emoji, col_main = st.columns([1, 6])
-        col_emoji.markdown("# 🔴")
-        col_main.markdown(f"### Year 0 — 사업 시작 직전")
-        col_main.metric(
-            "자기자본 일시 투입",
-            f"-{_to_manwon_int(equity)}",
-            delta="사업 시작 시점에 한꺼번에 들어가는 돈",
-            delta_color="off",
-        )
-        col_main.caption("💡 융자 외에 농가가 직접 부담하는 초기 자본. 사업비의 "
-                        f"{analysis.finance.equity_ratio*100:.0f}%")
-
-    st.divider()
-
-    # Year 1~ : 운영 기간 블록들
-    details = build_yearly_details(analysis)
-    blocks = group_into_regimes(details)
-
-    st.markdown(f"### 📅 운영 기간 ({len(details)}년) — {len(blocks)}개 구간으로 압축")
-
-    for idx, block in enumerate(blocks):
-        # 신호등
-        if block.monthly_net > 500:  # 월 +50만원 이상
-            icon, color = "🟢", "green"
-        elif block.monthly_net > -100:  # 거의 흑자
-            icon, color = "🟡", "yellow"
-        else:
-            icon, color = "🔴", "red"
-
-        span = (f"Year {block.year_start}" if block.year_start == block.year_end
-                else f"Year {block.year_start}~{block.year_end} ({block.n_years}년간)")
-
-        with st.container(border=True):
-            col_icon, col_title = st.columns([1, 6])
-            col_icon.markdown(f"# {icon}")
-            col_title.markdown(f"### {span} — {block.label}")
-
-            # 핵심 지표
-            c1, c2, c3 = st.columns(3)
-            c1.metric(
-                "매월 통장 흐름 (벼 제외)",
-                f"{'+' if block.monthly_net >= 0 else ''}{_to_manwon(block.monthly_net)}",
-                delta=("흑자" if block.monthly_net > 0 else
-                       "거의 균형" if block.monthly_net > -100 else "적자 위험"),
-                delta_color="normal" if block.monthly_net > 0 else "inverse",
-            )
-            c2.metric(
-                "가을 벼 수확 (일시)",
-                f"+{_to_manwon(block.annual_crop)}",
-                delta="매년 9~10월 수확",
-                delta_color="off",
-            )
-            c3.metric(
-                "연간 순이익 평균",
-                f"{'+' if block.annual_net_avg >= 0 else ''}{_to_manwon_int(block.annual_net_avg)}",
-                delta="벼+태양광 합산, 이벤트 포함",
-                delta_color="normal" if block.annual_net_avg > 0 else "inverse",
-            )
-
-            # 월별 상세
-            with st.expander("📋 월별 항목 상세 보기", expanded=(idx <= 1)):
-                breakdown = pd.DataFrame({
-                    "항목": [
-                        "🌞 발전 수익",
-                        "🏦 대출 상환 (이자+원금)",
-                        "🔧 정기 운영비 (전기·보험·수선)",
-                        "─── 매월 순흐름 ───",
-                    ],
-                    "월 금액": [
-                        f"+{_to_manwon(block.monthly_power)}",
-                        f"-{_to_manwon(block.monthly_loan)}" if block.monthly_loan > 0 else "0원 ✓",
-                        f"-{_to_manwon(block.monthly_other_opex)}",
-                        f"**{'+' if block.monthly_net >= 0 else ''}{_to_manwon(block.monthly_net)}**",
-                    ],
-                })
-                st.dataframe(breakdown, hide_index=True, use_container_width=True)
-
-            # 특별 이벤트
-            if block.events:
-                st.warning("⚠️ **특별 이벤트** (이 구간 내 일시 비용)")
-                for year, name, amount in block.events:
-                    st.markdown(f"- Year {year}: **{name}** {_to_manwon(amount)}")
-
-            # 코멘트
-            comments = _regime_comment(block, analysis)
-            if comments:
-                st.info("💡 " + comments)
-
-    # 전체 흐름 차트 (확인용)
-    st.divider()
-    st.subheader("📊 23년 전체 월별 순흐름 (벼 수확 제외)")
-    st.caption("거치 끝나는 6년차 급변, 융자 완료(16년차) 회복이 한눈에 보입니다.")
-
-    years = [d.year for d in details]
-    monthly_nets = [d.monthly_net_excluding_crop for d in details]
-    colors = ["#16a34a" if m > 500 else "#ca8a04" if m > -100 else "#dc2626"
-              for m in monthly_nets]
-
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=years, y=monthly_nets,
-        marker_color=colors,
-        text=[f"{m/10:+.0f}만" for m in monthly_nets],
-        textposition="outside",
-        name="매월 순흐름",
-    ))
-    fig.add_hline(y=0, line_color="#000", line_width=1)
-    fig.update_layout(
-        height=380,
-        xaxis_title="년차",
-        yaxis_title="매월 순흐름 (천원/월)",
-        showlegend=False,
-        margin=dict(l=40, r=40, t=20, b=40),
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-
-def _regime_comment(block, analysis: EconomicAnalysis) -> str:
-    """블록 성격에 따른 농가 안내 코멘트."""
-    if block.monthly_power == 0:
-        return "사업 종료. 영농 단독 운영. 시설 폐기 비용 별도 발생 가능."
-    if block.monthly_loan == 0:
-        return "융자 다 갚았습니다! 이제부터 발전 수익은 거의 다 순수익."
-    if block.monthly_loan < 500:
-        return f"거치 기간({analysis.finance.grace_years}년) 동안은 이자만 납부. " \
-               f"매월 부담 가벼움. 그러나 {analysis.finance.grace_years+1}년차부터 원금 상환 시작되면 부담 급증."
-    if block.monthly_net < 0:
-        return "원금 상환 부담으로 매월 흐름이 마이너스. " \
-               "**가을 벼 수확으로 연간 합산은 흑자**일 수 있으나 평상시 현금 부족 주의. " \
-               "비상금 준비 권장."
-    return ""
-
-
-# ──────────────────────────────────────────────────────────────────
-# 탭 2: 23년 시뮬레이션
-# ──────────────────────────────────────────────────────────────────
-
-def render_simulation_tab(result: AnalysisResult, analysis: EconomicAnalysis):
-    """연도별 현금흐름 + 누적 차트."""
-    st.subheader(f"📈 {result.project_years}년 누적 현금흐름")
-    st.caption(
-        "Year 0은 초기 자기자본 지출(음수)부터 시작. "
-        "곡선이 0 위로 올라가는 시점이 투자 회수 시점."
-    )
-
-    cash_flows = result.cash_flows
-    years = list(range(len(cash_flows)))
-    cumulative = []
-    running = 0
-    for cf in cash_flows:
-        running += cf
-        cumulative.append(running)
-
-    fig = go.Figure()
-    # 누적 라인
-    fig.add_trace(go.Scatter(
-        x=years, y=cumulative,
-        mode="lines+markers",
-        name="누적 현금흐름",
-        line=dict(color="#2563eb", width=3),
-        fill="tozeroy",
-        fillcolor="rgba(37, 99, 235, 0.1)",
-    ))
-    # 손익분기선
-    fig.add_hline(y=0, line_dash="dash", line_color="#dc2626",
-                  annotation_text="손익분기점", annotation_position="right")
-    # 회수 시점 마커
-    if result.payback_year:
-        fig.add_vline(
-            x=result.payback_year, line_dash="dot", line_color="#16a34a",
-            annotation_text=f"회수 시점: {result.payback_year:.1f}년",
-            annotation_position="top",
-        )
-
-    fig.update_layout(
-        height=450,
-        xaxis_title="연도 (Year 0 = 사업 시작)",
-        yaxis_title="누적 현금흐름 (천원)",
-        hovermode="x unified",
-        margin=dict(l=40, r=40, t=20, b=40),
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-    # 연도별 막대 그래프
-    st.subheader("📊 연도별 수입·지출")
-    col1, col2 = st.columns([3, 1])
-
-    # 연도별 흐름 계산
-    benefits = []
-    costs = []
-    for t in range(1, result.project_years + 1):
-        b, c = analysis.yearly_cash_flow(t)
-        benefits.append(b)
-        costs.append(c)
-
-    fig2 = go.Figure()
-    fig2.add_trace(go.Bar(
-        x=list(range(1, result.project_years + 1)),
-        y=benefits, name="수입 (발전+벼)", marker_color="#16a34a",
-    ))
-    fig2.add_trace(go.Bar(
-        x=list(range(1, result.project_years + 1)),
-        y=[-c for c in costs], name="지출 (운영비)", marker_color="#dc2626",
-    ))
-    fig2.update_layout(
-        height=350, barmode="relative",
-        xaxis_title="연도",
-        yaxis_title="현금흐름 (천원)",
-        hovermode="x unified",
-        margin=dict(l=40, r=40, t=20, b=40),
-    )
-    col1.plotly_chart(fig2, use_container_width=True)
-
-    with col2:
-        st.markdown("**연간 평균**")
-        st.metric("수입", f"{sum(benefits)/len(benefits):,.0f} 천원")
-        st.metric("지출", f"{sum(costs)/len(costs):,.0f} 천원")
-        st.metric("순이익", f"{(sum(benefits)-sum(costs))/len(benefits):,.0f} 천원")
-
-
-# ──────────────────────────────────────────────────────────────────
-# 탭 3: 시나리오 비교 (낙관/현실/비관)
-# ──────────────────────────────────────────────────────────────────
-
-def render_scenarios_tab(builder: ScenarioBuilder):
-    """현재 입력값 기준 단일요인 시나리오 비교."""
-    st.subheader("🔀 현재 조건 기준 시나리오")
-    st.caption(
-        "현재 입력한 발전가격·설치비·금리를 기준으로 각각 불리하거나 유리하게 변할 때 "
-        "수익성이 어떻게 달라지는지 확인하세요."
-    )
-
-    results = builder.current_input_scenarios()
-
-    # 막대 차트
-    fig = go.Figure()
-    colors = ["#2563eb" if r.name == "BL" else
-              "#dc2626" if r.bc < 1.0 else
-              "#ca8a04" if r.bc < 1.2 else
-              "#16a34a" for r in results]
-
-    fig.add_trace(go.Bar(
-        x=[f"{r.name}<br>{r.description}" for r in results],
-        y=[r.bc for r in results],
-        marker_color=colors,
-        text=[f"{r.bc:.2f}" for r in results],
-        textposition="outside",
-    ))
-    fig.add_hline(y=1.0, line_dash="dash", line_color="#dc2626",
-                  annotation_text="손익분기 (B/C=1.0)", annotation_position="right")
-    fig.add_hline(y=1.2, line_dash="dot", line_color="#16a34a",
-                  annotation_text="수익성 기준 (B/C=1.2)", annotation_position="right")
-    fig.update_layout(
-        height=450,
-        yaxis_title="B/C 비율",
-        margin=dict(l=40, r=40, t=20, b=40),
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-    # 표
-    st.markdown("**시나리오 상세**")
-    df = pd.DataFrame([{
-        "시나리오": r.name,
-        "내용": r.description,
-        "발전단가": f"{r.params['price']:.1f}원/kWh" if "price" in r.params else "현재",
-        "금리": f"{r.params['rate']*100:.2f}%" if "rate" in r.params else "현재",
-        "설치비": f"{r.params['cost_mult']*100:.0f}%" if "cost_mult" in r.params else "현재",
-        "B/C": f"{r.bc:.2f}",
-        "IRR": f"{r.irr*100:.1f}%" if r.irr else "—",
-        "회수기간": f"{r.result.payback_year:.1f}년" if r.result.payback_year else "—",
-        "벼 대비": f"{r.result.bc_vs_baseline:.1f}배",
-        "판정": ("🟢 양호" if r.bc >= 1.2 else "🟡 경계" if r.bc >= 1.0 else "🔴 손실"),
-    } for r in results])
-    st.dataframe(df, hide_index=True, use_container_width=True)
-
-
-# ──────────────────────────────────────────────────────────────────
-# 탭 4: 리스크 점검
-# ──────────────────────────────────────────────────────────────────
-
-def render_risk_tab(builder: ScenarioBuilder, analysis: EconomicAnalysis):
-    """토네이도 차트 + 손익분기 임계값."""
-    st.subheader("⚠️ 어떤 변수가 수익성을 가장 흔드는가")
-    st.caption(
-        "베이스라인 대비 각 변수를 ±15% 흔들었을 때 B/C가 얼마나 변하는지. "
-        "막대가 길수록 민감한 변수."
-    )
-
-    base = builder._run()
-    base_bc = base.bc_ratio
-
-    # 토네이도: ±15% 변동
-    sensitivities = []
-    # 발전가격
-    high_price = analysis.price.unit_price * 1.15
-    low_price = analysis.price.unit_price * 0.85
-    bc_high = builder._run(price_override=high_price).bc_ratio
-    bc_low = builder._run(price_override=low_price).bc_ratio
-    sensitivities.append(("발전가격 ±15%", bc_low - base_bc, bc_high - base_bc))
-
-    # 설치비
-    bc_high = builder._run(cost_multiplier=0.85).bc_ratio
-    bc_low = builder._run(cost_multiplier=1.15).bc_ratio
-    sensitivities.append(("설치비 ±15%", bc_low - base_bc, bc_high - base_bc))
-
-    # 금리 ±1%p
-    bc_high = builder._run(loan_rate_override=max(analysis.finance.loan_rate - 0.01, 0.001)).bc_ratio
-    bc_low = builder._run(loan_rate_override=analysis.finance.loan_rate + 0.01).bc_ratio
-    sensitivities.append(("금리 ±1%p", bc_low - base_bc, bc_high - base_bc))
-
-    # 정렬: 영향 큰 순
-    sensitivities.sort(key=lambda x: abs(x[2] - x[1]), reverse=True)
-
-    fig = go.Figure()
-    for name, low, high in sensitivities:
-        fig.add_trace(go.Bar(
-            y=[name], x=[low], orientation="h",
-            marker_color="#dc2626", name="불리한 방향",
-            showlegend=name == sensitivities[0][0],
-            text=f"{low:+.3f}", textposition="auto",
-        ))
-        fig.add_trace(go.Bar(
-            y=[name], x=[high], orientation="h",
-            marker_color="#16a34a", name="유리한 방향",
-            showlegend=name == sensitivities[0][0],
-            text=f"{high:+.3f}", textposition="auto",
-        ))
-    fig.update_layout(
-        height=350, barmode="overlay",
-        xaxis_title=f"B/C 변화 (베이스라인 {base_bc:.2f} 기준)",
-        margin=dict(l=40, r=40, t=20, b=40),
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-    # 손익분기 임계값
-    st.divider()
-    st.subheader("🎯 손익분기 임계값")
-    st.caption("아래 값 이하/이상이 되면 B/C가 1.0 미만으로 떨어집니다.")
-
-    # 발전가격 임계값 (bisection)
-    base_price = analysis.price.unit_price
-    lo, hi = base_price * 0.3, base_price
-    for _ in range(40):
-        mid = (lo + hi) / 2
-        bc = builder._run(price_override=mid).bc_ratio
-        if bc < 1.0:
-            lo = mid
-        else:
-            hi = mid
-    breakeven_price = (lo + hi) / 2
-
-    # 설치비 임계값
-    lo, hi = 1.0, 3.0
-    for _ in range(40):
-        mid = (lo + hi) / 2
-        bc = builder._run(cost_multiplier=mid).bc_ratio
-        if bc > 1.0:
-            lo = mid
-        else:
-            hi = mid
-    breakeven_cost_mult = (lo + hi) / 2
-
-    col1, col2 = st.columns(2)
-    col1.metric(
-        "발전가격 손익분기",
-        f"{breakeven_price:.1f} 원/kWh",
-        delta=f"현재 {base_price:.1f}원 대비 {(breakeven_price/base_price-1)*100:+.1f}%",
-        delta_color="off",
-    )
-    col2.metric(
-        "설치비 손익분기",
-        f"{breakeven_cost_mult*100:.0f}%",
-        delta=f"현재 100% 대비 {(breakeven_cost_mult-1)*100:+.0f}%",
-        delta_color="off",
-    )
-
-
-# ──────────────────────────────────────────────────────────────────
-# 탭 5: 전문가 모드
-# ──────────────────────────────────────────────────────────────────
-
-def render_expert_tab(result: AnalysisResult, analysis: EconomicAnalysis, builder: ScenarioBuilder):
-    """NPV/IRR 상세 + 18개 복합 시나리오 + 리스크 프리미엄."""
-    st.subheader("🔬 상세 재무 지표")
-
-    col1, col2, col3 = st.columns(3)
-    col1.metric("NPV (발전 손익)", f"{result.npv_power:,.0f} 천원",
-                f"연간 {result.npv_power_annualized:,.0f} 천원")
-    col2.metric("NPV (벼 손익, 단수감소)", f"{result.npv_crop_with_reduction:,.0f} 천원",
-                f"연간 {result.npv_crop_reduction_annualized:,.0f} 천원")
-    col3.metric("NPV (벼+태양광)", f"{result.npv_total:,.0f} 천원",
-                f"연간 {result.npv_total_annualized:,.0f} 천원")
-
-    st.divider()
-
-    # 복합 시나리오 18개 매트릭스
-    st.subheader("📊 복합요인 18개 시나리오 (PDF 표 4-8)")
-    st.caption("발전단가 × 금리 × 설치비 모든 조합")
-
-    composite = builder.composite_scenarios()
-
-    # 설치비 라벨을 사람이 읽기 좋게 (정렬도 좌→우 증가 순)
-    def _cost_label(mult: float) -> str:
-        if mult == 1.0:
-            return "현행 (0%)"
-        return f"{(mult-1)*100:+.0f}%"
-
-    df = pd.DataFrame([{
-        "시나리오": r.name,
-        "발전단가": r.params["price"],
-        "금리(%)": f"{r.params['rate']*100:.2f}",
-        "설치비": _cost_label(r.params["cost_mult"]),
-        "B/C": r.bc,
-    } for r in composite])
-
-    # 히트맵: 설치비를 -15% → 현행 → +15% 순서로 정렬
-    pivot = df.pivot_table(
-        index=["발전단가", "금리(%)"],
-        columns="설치비",
-        values="B/C",
-        aggfunc="first",
-    )
-    cost_order = ["-15%", "현행 (0%)", "+15%"]
-    pivot = pivot[[c for c in cost_order if c in pivot.columns]]
-
-    # 명시적 str 변환 + categorical 축 지정 (ArrowStringArray 호환성 이슈 회피)
-    x_labels = [str(c) for c in pivot.columns]
-    y_labels = [f"{p}원/kWh · 금리 {r}%" for p, r in pivot.index]
-    z_values = pivot.values.astype(float).tolist()
-
-    fig_heatmap = go.Figure(data=go.Heatmap(
-        z=z_values,
-        x=x_labels,
-        y=y_labels,
-        colorscale=[(0, "#dc2626"), (0.5, "#fbbf24"), (1, "#16a34a")],
-        zmin=0.9, zmax=1.5, zmid=1.2,
-        text=[[f"{v:.2f}" for v in row] for row in z_values],
-        texttemplate="%{text}",
-        textfont={"size": 16, "color": "#000"},
-        colorbar=dict(title="B/C", tickformat=".2f"),
-        hovertemplate="<b>%{y}</b><br>설치비 %{x}<br>B/C = %{z:.3f}<extra></extra>",
-        xgap=2, ygap=2,
-    ))
-    fig_heatmap.update_layout(
-        height=480,
-        xaxis=dict(
-            title="설치비 변동 (← 절감 | 증가 →)",
-            type="category",
-            categoryorder="array",
-            categoryarray=x_labels,
-            tickfont=dict(size=13),
-        ),
-        yaxis=dict(
-            title="발전단가 / 금리",
-            type="category",
-            autorange="reversed",  # 첫 행을 위로
-            tickfont=dict(size=12),
-        ),
-        margin=dict(l=40, r=40, t=30, b=60),
-    )
-    st.plotly_chart(fig_heatmap, use_container_width=True)
-
-    # 표
-    df_display = df.copy()
-    df_display["B/C"] = df_display["B/C"].apply(lambda x: f"{x:.2f}")
-    df_display["판정"] = df["B/C"].apply(
-        lambda x: "🟢 양호" if x >= 1.2 else "🟡 경계" if x >= 1.0 else "🔴 손실"
-    )
-    st.dataframe(df_display, hide_index=True, use_container_width=True)
-
-    st.divider()
-
-    # 리스크 프리미엄
-    st.subheader("⚠️ 리스크 프리미엄 (할인율 변화)")
-    st.caption("시중금리 4.5% + 경영·금융 리스크 프리미엄 반영 시 B/C 변화")
-
-    risk = builder.risk_premium_scenarios()
-    df_risk = pd.DataFrame([{
-        "시나리오": r.name,
-        "설명": r.description,
-        "할인율": f"{r.params['discount']*100:.1f}%",
-        "B/C": f"{r.bc:.2f}",
-        "판정": ("🟢" if r.bc >= 1.2 else "🟡" if r.bc >= 1.0 else "🔴"),
-    } for r in risk])
-    st.dataframe(df_risk, hide_index=True, use_container_width=True)
-
-    st.divider()
-
-    # 농지법 비교 — 개정 효과 가시화
-    st.subheader("📜 농지법 개정 영향 비교")
-    st.caption("구법(8년) vs 현행(2026.05 개정, 23년)이 수익성에 미친 영향")
-
-    # 구법 8년 + 잡종지 전환 후 20년 시나리오를 재현
-    from core.calculator import EconomicAnalysis, LandLawInput
-    import copy
-
-    law_scenarios = [
-        ("구법 8년 운영", LandLawInput(max_operation_years=8)),
-        ("구법 + 잡종지 전환 20년", LandLawInput(max_operation_years=20, conversion_tax_per_year=462)),
-        ("개정 23년 (현행)", LandLawInput(max_operation_years=23)),
-    ]
-    rows = []
-    for name, ll in law_scenarios:
-        a = EconomicAnalysis(
-            facility=analysis.facility, cost=analysis.cost, finance=analysis.finance,
-            price=analysis.price, opex=analysis.opex, crop=analysis.crop,
-            land_law=ll, discount_rate=analysis.discount_rate,
-        )
-        r = a.run()
-        rows.append({
-            "시나리오": name,
-            "운영기간": f"{ll.max_operation_years}년",
-            "B/C": f"{r.bc_ratio:.2f}",
-            "IRR": f"{r.irr*100:.1f}%" if r.irr else "—",
-            "회수기간": f"{r.payback_year:.1f}년" if r.payback_year else "—",
-            "연간 순이익": f"{round(r.npv_total_annualized/10):,}만원",
-            "판정": ("🟢 양호" if r.bc_ratio >= 1.2 else
-                   "🟡 경계" if r.bc_ratio >= 1.0 else "🔴 손실"),
-        })
-    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+def _money(value: float) -> str:
+    sign = "-" if value < 0 else ""
+    value = abs(value)
+    if value >= 100_000:
+        return f"{sign}{value / 100_000:.2f}억원"
+    return f"{sign}{value / 10:,.0f}만원"
+
+
+def _pct(value: float | None) -> str:
+    return "계산 불가" if value is None else f"{value * 100:.1f}%"
+
+
+def render_summary_tab(result: AnalysisResult) -> None:
+    st.subheader("한눈에 보는 결과")
+    st.caption("사업 전체와 농가 자기자본의 수익률은 서로 다른 현금흐름으로 계산합니다.")
+
+    a, b, c, d = st.columns(4)
+    a.metric("사업 순현재가치", _money(result.project_npv), help="총사업비를 Year 0에 반영한 사업 전체 NPV")
+    b.metric("사업 내부수익률", _pct(result.project_irr), help="대출 조건과 무관한 사업 자체 IRR")
+    c.metric("자기자본 내부수익률", _pct(result.equity_irr), help="초기 자기자본과 실제 원리금 상환을 반영한 IRR")
+    d.metric("최저 DSCR", "—" if result.minimum_dscr is None else f"{result.minimum_dscr:.2f}배", help="연간 영업현금흐름 ÷ 원리금 상환액의 최솟값")
+
+    if result.project_npv < 0:
+        st.warning("현재 가정에서는 요구수익률을 적용한 사업 순현재가치가 음수입니다.")
+    if result.minimum_dscr is not None and result.minimum_dscr < 1:
+        st.error("일부 연도에 영업현금만으로 원리금을 갚지 못하는 것으로 계산됩니다.")
+    elif result.minimum_dscr is not None and result.minimum_dscr < 1.2:
+        st.warning("원리금 상환 여유가 크지 않습니다. 가격 하락·발전량 감소 조건을 함께 확인하세요.")
+
+    st.markdown("#### 농가 통장 기준")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("필요 자기자본", _money(-result.equity_cash_flows[0]))
+    c2.metric("1년차 순현금", _money(result.first_year_equity_cash))
+    c3.metric("원금상환 첫해 순현금", _money(result.repayment_year_equity_cash or 0))
+    c4.metric("자기자본 회수", "—" if result.equity_payback_year is None else f"{result.equity_payback_year:.1f}년")
+
+    st.markdown("#### 계산 범위")
     st.info(
-        "💡 **농지법 개정 효과**: 같은 농지·시설 조건에서도 운영 기간이 8년 → 23년으로 늘면 "
-        "발전 수익을 더 길게 회수할 수 있어 B/C가 크게 개선됩니다. "
-        "잡종지 전환은 추가 세금이 발생하지만 일시사용보다 안정적."
+        "발전수익, 벼 소득, 정기 운영비, 인버터 교체, 실제 원리금 상환을 포함합니다. "
+        "세금·부가가치세, 임차료, 계통 보강비와 출력제어, 철거·원상복구비, 물가상승은 포함하지 않습니다."
     )
 
-    st.divider()
-    st.markdown("""
-    **방법론 참고**
-    - 모델: KREI(2023) 4장 + 프로젝트 파이낸스 표준
-    - B/C = (자기자본 upfront + PV 운영비) 대비 PV(발전+벼 수익)
-    - 분석 기간: 시설수명 23년 (농지법 개정, 2026.05.07 국회 통과)
-    - 할인율: 융자 금리 (기본 시나리오) / 시중금리 4.5% + 리스크 프리미엄 (리스크 분석)
-    """)
+
+def render_cashflow_tab(result: AnalysisResult) -> None:
+    st.subheader("연도별 현금흐름")
+    rows = []
+    project_cum = 0.0
+    equity_cum = 0.0
+    for year in range(result.project_years + 1):
+        project = result.project_cash_flows[year]
+        equity = result.equity_cash_flows[year]
+        project_cum += project
+        equity_cum += equity
+        rows.append({
+            "연도": year,
+            "사업 현금흐름": project,
+            "자기자본 현금흐름": equity,
+            "사업 누계": project_cum,
+            "자기자본 누계": equity_cum,
+        })
+    df = pd.DataFrame(rows)
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df["연도"], y=df["사업 누계"], name="사업 누계", line=dict(color="#17463f", width=3)))
+    fig.add_trace(go.Scatter(x=df["연도"], y=df["자기자본 누계"], name="자기자본 누계", line=dict(color="#ca7a27", width=3)))
+    fig.add_hline(y=0, line_color="#7a817d", line_dash="dot")
+    fig.update_layout(height=410, margin=dict(l=12, r=12, t=24, b=12), yaxis_title="천원", hovermode="x unified")
+    st.plotly_chart(fig, use_container_width=True)
+
+    details = pd.DataFrame([
+        {
+            "연도": d.year,
+            "발전수익": round(d.power_revenue),
+            "농업소득": round(d.crop_revenue),
+            "운영·교체비": round(d.steady_opex + d.inverter_cost + d.conversion_cost),
+            "이자": round(d.debt_interest),
+            "원금": round(d.debt_principal),
+            "농가 순현금": round(d.equity_cash_flow),
+        }
+        for d in result.annual_cash_flows
+    ])
+    st.dataframe(details, hide_index=True, use_container_width=True)
+    st.caption("단위: 천원. 인버터 교체비는 10년차와 20년차에 일시 반영합니다.")
+
+
+def render_sensitivity_tab(builder: ScenarioBuilder) -> None:
+    st.subheader("가격·설치비·금리 민감도")
+    st.caption("한 번에 한 조건만 바꿔 현재 입력값과 비교합니다. 예측이 아니라 스트레스 테스트입니다.")
+    scenarios = builder.current_input_scenarios()
+    rows = []
+    for scenario in scenarios:
+        r = scenario.result
+        rows.append({
+            "조건": scenario.description,
+            "사업 NPV(천원)": round(r.project_npv),
+            "사업 IRR": None if r.project_irr is None else r.project_irr * 100,
+            "자기자본 IRR": None if r.equity_irr is None else r.equity_irr * 100,
+            "최저 DSCR": r.minimum_dscr,
+        })
+    df = pd.DataFrame(rows)
+    colors = ["#17463f" if i == 0 else "#79a49a" for i in range(len(df))]
+    fig = go.Figure(go.Bar(x=df["조건"], y=df["사업 NPV(천원)"], marker_color=colors))
+    fig.add_hline(y=0, line_color="#9a3c32", line_dash="dot")
+    fig.update_layout(height=390, margin=dict(l=12, r=12, t=24, b=110), yaxis_title="사업 NPV(천원)")
+    st.plotly_chart(fig, use_container_width=True)
+    st.dataframe(
+        df.style.format({"사업 NPV(천원)": "{:,.0f}", "사업 IRR": "{:.1f}%", "자기자본 IRR": "{:.1f}%", "최저 DSCR": "{:.2f}"}, na_rep="—"),
+        hide_index=True,
+        use_container_width=True,
+    )

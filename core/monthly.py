@@ -1,7 +1,6 @@
 """실제 월별 현금흐름 분석 — 균등화 안 된 raw 통장 흐름.
 
-기존 calculator.py는 B/C 계산을 위해 자기자본·대출상환을 lifetime으로 균등화함.
-이 모듈은 실제로 농가 통장에 매월 들어오고 나가는 돈을 그대로 보여줌.
+calculator.py와 동일한 실제 원리금 상환표를 월평균으로 풀어 보여주는 보조 모듈.
 
 주요 변화 시점:
   Year 0:    자기자본 일시 투입
@@ -94,7 +93,7 @@ def build_yearly_details(analysis: EconomicAnalysis) -> List[YearlyDetail]:
     schedule = analysis.loan_schedule()
     op_years = analysis.land_law.max_operation_years
 
-    # 인버터 교체 주기: 10년 (총 비용은 PDF의 annualized 1,000 천원 × 10 = 10,000 천원으로 추정)
+    # 인버터 교체 주기: 10년 (연간 적립 가정액의 10배를 일시 지출)
     inverter_one_time_cost = analysis.opex.inverter_replace * 10
     inverter_years = {10, 20}  # lifetime 23년 내에서 2회 교체
 
