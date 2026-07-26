@@ -21,9 +21,74 @@ def _pct(value: float | None) -> str:
     return "계산 불가" if value is None else f"{value * 100:.1f}%"
 
 
+def _decision_copy(result: AnalysisResult) -> tuple[str, str, str]:
+    """Return a plain-language investment assessment for the summary panel."""
+    if result.project_npv < 0:
+        return (
+            "재검토 필요",
+            "현재 조건에서는 사업성이 부족합니다.",
+            "설치비와 판매단가를 다시 확인하고 민감도 결과에서 손익이 바뀌는 조건을 살펴보세요.",
+        )
+    if result.minimum_dscr is not None and result.minimum_dscr < 1:
+        return (
+            "대출 상환 주의",
+            "수익은 나지만 상환 부담이 큽니다.",
+            "일부 연도에는 사업에서 번 현금만으로 원리금을 모두 갚기 어렵습니다. 자기자본 비율이나 대출 조건을 먼저 조정해 보세요.",
+        )
+    if result.minimum_dscr is not None and result.minimum_dscr < 1.2:
+        return (
+            "여유자금 확인",
+            "사업성은 있지만 상환 여유가 작습니다.",
+            "판매단가 하락이나 발전량 감소가 생기면 현금이 부족할 수 있습니다. 민감도 결과를 함께 확인하세요.",
+        )
+    return (
+        "검토 가능",
+        "현재 조건에서는 다음 검토로 넘어갈 수 있습니다.",
+        "수익성과 원리금 상환 여력이 모두 기준을 충족합니다. 실제 견적과 계통연계 가능 여부를 추가로 확인하세요.",
+    )
+
+
+def render_decision_panel(result: AnalysisResult) -> None:
+    """Render the farmer-facing decision summary next to the inputs."""
+    badge, title, description = _decision_copy(result)
+    tone = (
+        "danger" if result.project_npv < 0
+        else "warning" if result.minimum_dscr is not None and result.minimum_dscr < 1.2
+        else "positive"
+    )
+    dscr_value = "—" if result.minimum_dscr is None else f"{result.minimum_dscr:.2f}배"
+
+    st.markdown(
+        f"""
+        <div class="kifc-decision">
+          <div class="kifc-decision__eyebrow">현재 조건의 핵심 판단</div>
+          <div class="kifc-decision__status kifc-decision__status--{tone}">{badge}</div>
+          <h2>{title}</h2>
+          <p class="kifc-decision__lead">{description}</p>
+          <div class="kifc-decision__metrics">
+            <div>
+              <span>필요 자기자본</span>
+              <strong>{_money(-result.equity_cash_flows[0])}</strong>
+            </div>
+            <div>
+              <span>원금상환 첫해</span>
+              <strong>{_money(result.repayment_year_equity_cash or 0)}</strong>
+            </div>
+            <div>
+              <span>상환 여력</span>
+              <strong>{dscr_value}</strong>
+              <small>1.0배 미만이면 부족</small>
+            </div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_summary_tab(result: AnalysisResult) -> None:
-    st.subheader("한눈에 보는 결과")
-    st.caption("사업 전체와 농가 자기자본의 수익률은 서로 다른 현금흐름으로 계산합니다.")
+    st.subheader("사업성 지표")
+    st.caption("사업 전체 수익성과 농가가 투입한 자기자본의 수익성은 서로 다른 현금흐름으로 계산합니다.")
 
     a, b, c, d = st.columns(4)
     a.metric("사업 순현재가치", _money(result.project_npv), help="총사업비를 Year 0에 반영한 사업 전체 NPV")
