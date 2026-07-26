@@ -206,8 +206,8 @@ p, label, [data-testid="stCaptionContainer"] { line-height:1.65; }
 """, unsafe_allow_html=True)
 
 
-@st.cache_data
 def assumptions():
+    """Load the small config file on each rerun so deployments never show stale assumptions."""
     return load_assumptions()
 
 
