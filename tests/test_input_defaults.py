@@ -83,6 +83,13 @@ def test_shared_url_is_restored_and_rewritten():
     assert shared["t"] == "rps"
 
 
+def test_largest_farm_is_not_clamped_by_the_cost_ceiling():
+    """면적 상한의 권장 사업비가 위젯 상한에 잘려 과소 표시되면 안 된다."""
+    at = run(a="10000")
+    assert at.session_state[CAPACITY] == 495
+    assert at.session_state[COST] == 1_050_000
+
+
 def test_explicit_url_values_win_over_derived_defaults():
     at = run(a="6000", b="240000", c="150")
     assert at.session_state[COST] == 240_000
