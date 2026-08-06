@@ -29,3 +29,6 @@ build/
 *.egg
 launch.json
 .claude/launch.json
+
+# oh-my-claudecode / agent tooling scratch state
+.omc/

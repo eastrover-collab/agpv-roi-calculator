@@ -83,7 +83,9 @@ class ScenarioBuilder:
             opex=self.opex,
             crop=self.crop,
             land_law=land_law,
-            discount_rate=discount_rate_override or self.discount_rate,
+            discount_rate=(
+                self.discount_rate if discount_rate_override is None else discount_rate_override
+            ),
         )
         return analysis.run()
 

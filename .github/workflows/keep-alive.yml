@@ -7,7 +7,7 @@
 #   active 로 인정함.
 #
 # 동작:
-#   매 6시간마다 헤드리스 Chromium 으로 앱 URL 을 열고, 잠들어 있으면 'wake up'
+#   매 8시간마다 헤드리스 Chromium 으로 앱 URL 을 열고, 잠들어 있으면 'wake up'
 #   버튼을 누르고, 45초 동안 페이지를 유지해 WebSocket 으로 active 신호 전달.
 #
 # 비용:
