@@ -166,6 +166,7 @@ class AnalysisResult:
     equity_irr: Optional[float]
     equity_payback_year: Optional[float]
     minimum_dscr: Optional[float]
+    minimum_dscr_year: Optional[int]
     first_year_equity_cash: float
     repayment_year_equity_cash: Optional[float]
 
@@ -347,7 +348,8 @@ class EconomicAnalysis:
         equity_npv = self._npv(equity_flows, self.discount_rate)
 
         debt_years = [d for d in details if d.debt_service > 0]
-        dscrs = [d.operating_cash_flow / d.debt_service for d in debt_years]
+        dscrs = [(d.operating_cash_flow / d.debt_service, d.year) for d in debt_years]
+        worst_dscr, worst_dscr_year = min(dscrs) if dscrs else (None, None)
         repayment_year = self.finance.grace_years + 1
         repayment_cash = next(
             (d.equity_cash_flow for d in details if d.year == repayment_year), None
@@ -375,7 +377,8 @@ class EconomicAnalysis:
             equity_npv=equity_npv,
             equity_irr=self._compute_irr(equity_flows),
             equity_payback_year=self._compute_payback(equity_flows),
-            minimum_dscr=min(dscrs) if dscrs else None,
+            minimum_dscr=worst_dscr,
+            minimum_dscr_year=worst_dscr_year,
             first_year_equity_cash=details[0].equity_cash_flow if details else 0.0,
             repayment_year_equity_cash=repayment_cash,
             npv_power=pv_power - pv_operating_costs,

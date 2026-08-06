@@ -67,3 +67,23 @@ def test_dscr_is_minimum_of_debt_years():
         for d in result.annual_cash_flows if d.debt_service > 0
     )
     assert result.minimum_dscr == pytest.approx(expected)
+
+
+def test_dscr_reports_the_year_it_occurs_in():
+    result = build().run()
+    by_year = {
+        d.year: d.operating_cash_flow / d.debt_service
+        for d in result.annual_cash_flows if d.debt_service > 0
+    }
+    worst = min(by_year, key=by_year.get)
+    assert result.minimum_dscr_year == worst
+    assert result.minimum_dscr == pytest.approx(by_year[worst])
+    # 기본 가정에서 최악의 해는 인버터를 교체하는 10년차다. 이 사실을 화면에
+    # 함께 표시해야 0.42배가 구조적 수치로 오독되지 않는다.
+    assert worst == 10
+
+
+def test_dscr_year_is_absent_without_debt():
+    result = build(FinanceInput(equity_ratio=1.0, loan_rate=.018, grace_years=5, repay_years=10)).run()
+    assert result.minimum_dscr is None
+    assert result.minimum_dscr_year is None

@@ -21,6 +21,21 @@ def _pct(value: float | None) -> str:
     return "계산 불가" if value is None else f"{value * 100:.1f}%"
 
 
+def _dscr(result: AnalysisResult) -> str:
+    return "—" if result.minimum_dscr is None else f"{result.minimum_dscr:.2f}배"
+
+
+def _dscr_year_note(result: AnalysisResult) -> str:
+    """최저 DSCR 이 몇 년차인지. 인버터 교체 연도면 그 사실까지 함께 밝힌다."""
+    year = result.minimum_dscr_year
+    if year is None:
+        return ""
+    replacement = next(
+        (d for d in result.annual_cash_flows if d.year == year and d.inverter_cost > 0), None
+    )
+    return f"{year}년차(인버터 교체)" if replacement else f"{year}년차"
+
+
 def _decision_copy(result: AnalysisResult) -> tuple[str, str, str]:
     """Return a plain-language investment assessment for the summary panel."""
     if result.project_npv < 0:
@@ -56,7 +71,9 @@ def render_decision_panel(result: AnalysisResult) -> None:
         else "warning" if result.minimum_dscr is not None and result.minimum_dscr < 1.2
         else "positive"
     )
-    dscr_value = "—" if result.minimum_dscr is None else f"{result.minimum_dscr:.2f}배"
+    dscr_value = _dscr(result)
+    dscr_note = _dscr_year_note(result)
+    dscr_note = f"{dscr_note} 기준 · 1.0배 미만이면 부족" if dscr_note else "1.0배 미만이면 부족"
 
     st.markdown(
         f"""
@@ -77,7 +94,7 @@ def render_decision_panel(result: AnalysisResult) -> None:
             <div>
               <span>상환 여력</span>
               <strong>{dscr_value}</strong>
-              <small>1.0배 미만이면 부족</small>
+              <small>{dscr_note}</small>
             </div>
           </div>
         </div>
@@ -94,7 +111,12 @@ def render_summary_tab(result: AnalysisResult) -> None:
     a.metric("사업 순현재가치", _money(result.project_npv), help="총사업비를 Year 0에 반영한 사업 전체 NPV")
     b.metric("사업 내부수익률", _pct(result.project_irr), help="대출 조건과 무관한 사업 자체 IRR")
     c.metric("자기자본 내부수익률", _pct(result.equity_irr), help="초기 자기자본과 실제 원리금 상환을 반영한 IRR")
-    d.metric("최저 DSCR", "—" if result.minimum_dscr is None else f"{result.minimum_dscr:.2f}배", help="연간 영업현금흐름 ÷ 원리금 상환액의 최솟값")
+    dscr_note = _dscr_year_note(result)
+    d.metric(
+        f"최저 DSCR · {dscr_note}" if dscr_note else "최저 DSCR", _dscr(result),
+        help="연간 영업현금흐름 ÷ 원리금 상환액의 최솟값. 인버터를 교체하는 해는 "
+             "적립 없이 일시 지출로 반영하므로 그해만 낮게 나옵니다.",
+    )
 
     if result.project_npv < 0:
         st.warning("현재 가정에서는 요구수익률을 적용한 사업 순현재가치가 음수입니다.")
