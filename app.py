@@ -214,6 +214,15 @@ def assumptions():
 A = assumptions()
 QP = st.query_params
 
+BASE_AREA_M2 = float(A["facility"]["area_m2"])
+BASE_CAPACITY_KW = float(A["facility"]["capacity_kw"])
+BASE_TOTAL_COST = float(A["cost"]["total"])
+PERMITS = int(A["cost"]["permits"])
+COST_MAX = 1_000_000
+CAPACITY_MIN, CAPACITY_MAX = 10, 1_000
+TRACKS = ["ppa", "rps"]
+LOAN_KEYS = list(A["finance"]["loan_options"])
+
 
 def qp_number(key: str, default: float, low: float, high: float) -> float:
     try:
@@ -226,6 +235,70 @@ def qp_number(key: str, default: float, low: float, high: float) -> float:
 def qp_choice(key: str, default: str, choices: list[str]) -> str:
     value = str(QP.get(key, default))
     return value if value in choices else default
+
+
+def recommended_capacity(area_m2: float) -> int:
+    """면적에 비례한 권장 시설용량(kW). 위젯 범위로 clamp."""
+    kw = round(area_m2 * BASE_CAPACITY_KW / BASE_AREA_M2)
+    return int(min(max(kw, CAPACITY_MIN), CAPACITY_MAX))
+
+
+def recommended_cost(area_m2: float) -> int:
+    """권장 시설용량에 비례한 권장 총사업비(천원). 위젯 범위로 clamp."""
+    cost = round(recommended_capacity(area_m2) / BASE_CAPACITY_KW * BASE_TOTAL_COST)
+    return int(min(max(cost, PERMITS), COST_MAX))
+
+
+def default_price(track: str) -> float:
+    """판매 방식별 기본 단가(원/kWh)."""
+    if track == "ppa":
+        return round(float(A["power_price"]["ppa_track"]["fixed_price_krw_per_kwh"]), 2)
+    rps = A["power_price"]["rps_track"]
+    return round(float(rps["smp_krw_per_kwh"] + rps["rec_krw_per_kwh"] * rps["weight"]), 2)
+
+
+def sync_area_derived() -> None:
+    """면적을 바꾸면 아직 손대지 않은 용량·사업비만 새 권장값으로 따라간다."""
+    previous = st.session_state.derived_area
+    area = int(st.session_state.area)
+    if st.session_state.capacity == recommended_capacity(previous):
+        st.session_state.capacity = recommended_capacity(area)
+    if st.session_state.total_cost == recommended_cost(previous):
+        st.session_state.total_cost = recommended_cost(area)
+    st.session_state.derived_area = area
+
+
+def sync_track_price() -> None:
+    """판매 방식을 바꾸면 아직 손대지 않은 단가만 새 기본값으로 따라간다."""
+    previous = st.session_state.derived_track
+    track = st.session_state.track
+    if st.session_state.sale_price == default_price(previous):
+        st.session_state.sale_price = default_price(track)
+    st.session_state.derived_track = track
+
+
+# 위젯 값은 session_state 가 보유하고 URL 쿼리는 세션당 한 번만 읽는다.
+# 매 rerun 마다 URL 을 다시 읽으면, 아래에서 QP.update() 로 써넣은 값이 곧바로
+# 기본값 자리를 차지해 면적·판매방식에서 파생되는 권장값이 영원히 반영되지 않는다.
+if "seeded" not in st.session_state:
+    seed_area = int(qp_number("a", BASE_AREA_M2, 500, 10_000))
+    seed_track = qp_choice("t", "ppa", TRACKS)
+    st.session_state.update({
+        "area": seed_area,
+        "total_cost": int(qp_number("b", recommended_cost(seed_area), PERMITS, COST_MAX)),
+        "capacity": int(qp_number("c", recommended_capacity(seed_area), CAPACITY_MIN, CAPACITY_MAX)),
+        "equity_pct": qp_number("e", A["finance"]["equity_ratio"] * 100, 10, 100),
+        "loan_key": qp_choice("l", "policy_2026", LOAN_KEYS),
+        "track": seed_track,
+        "sale_price": qp_number("p", default_price(seed_track), 50, 300),
+        "daily_hours": qp_number("h", A["facility"]["daily_gen_hours"], 2.5, 5.0),
+        "discount_pct": qp_number("d", A["discount"]["base_rate"] * 100, 0, 20),
+        "yield_pct": int(qp_number("y", A["crops"]["rice"]["yield_reduction"] * 100, 0, 50)),
+        "curtailment_pct": qp_number("k", A["facility"].get("curtailment_rate", 0.0) * 100, 0, 15),
+        "derived_area": seed_area,
+        "derived_track": seed_track,
+        "seeded": True,
+    })
 
 
 st.markdown(
@@ -251,76 +324,65 @@ with input_column:
         c1, c2 = st.columns(2, gap="medium")
         with c1:
             area = int(st.number_input(
-                "농지 면적(㎡)", 500, 10_000,
-                int(qp_number("a", A["facility"]["area_m2"], 500, 10_000)), step=100,
+                "농지 면적(㎡)", min_value=500, max_value=10_000, step=100,
+                key="area", on_change=sync_area_derived,
                 help="태양광 설비와 농작업 공간을 함께 사용할 전체 농지 면적입니다.",
             ))
-        recommended_kw = max(10, round(area * A["facility"]["capacity_kw"] / A["facility"]["area_m2"]))
-        recommended_cost = round(recommended_kw / A["facility"]["capacity_kw"] * A["cost"]["total"])
         with c2:
             total_cost = int(st.number_input(
-                "총사업비(천원)", int(A["cost"]["permits"]), 1_000_000,
-                int(qp_number("b", recommended_cost, A["cost"]["permits"], 1_000_000)), step=1_000,
-                help="공사비, 설계·감리, 인허가와 계통연계 관련 비용을 합한 금액입니다.",
+                "총사업비(천원)", min_value=PERMITS, max_value=COST_MAX, step=1_000,
+                key="total_cost",
+                help="공사비, 설계·감리, 인허가와 계통연계 관련 비용을 합한 금액입니다. "
+                     "직접 고치기 전까지는 면적에 맞춘 권장값이 따라옵니다.",
             ))
 
         f1, f2 = st.columns(2, gap="medium")
         with f1:
             equity_pct = st.slider(
-                "내 돈으로 부담할 비율(%)", 10.0, 100.0,
-                qp_number("e", A["finance"]["equity_ratio"] * 100, 10, 100), step=.5,
+                "내 돈으로 부담할 비율(%)", 10.0, 100.0, step=.5, key="equity_pct",
                 help="총사업비 가운데 대출을 제외하고 농가가 직접 부담할 비율입니다.",
             )
         with f2:
-            loan_keys = list(A["finance"]["loan_options"])
             loan_key = st.selectbox(
-                "대출 조건", loan_keys,
-                index=loan_keys.index(qp_choice("l", "policy_2026", loan_keys)),
+                "대출 조건", LOAN_KEYS, key="loan_key",
                 format_func=lambda k: f"{A['finance']['loan_options'][k]['name']} ({A['finance']['loan_options'][k]['rate']*100:.2f}%)",
             )
             loan_rate = float(A["finance"]["loan_options"][loan_key]["rate"])
 
         track = st.radio(
-            "전력 판매 방식", ["ppa", "rps"],
-            index=["ppa", "rps"].index(qp_choice("t", "ppa", ["ppa", "rps"])),
+            "전력 판매 방식", TRACKS, key="track", on_change=sync_track_price,
             format_func=lambda x: "고정가격계약(PPA)" if x == "ppa" else "SMP+REC(기존 사업 비교)",
             help="실제 적용 가능 여부와 계약 단가는 사업별 공고·계약서를 확인해야 합니다.",
             horizontal=True,
         )
-        default_price = (
-            A["power_price"]["ppa_track"]["fixed_price_krw_per_kwh"] if track == "ppa"
-            else A["power_price"]["rps_track"]["smp_krw_per_kwh"] + A["power_price"]["rps_track"]["rec_krw_per_kwh"] * A["power_price"]["rps_track"]["weight"]
-        )
         sale_price = st.number_input(
-            "전력 판매단가(원/kWh)", 50.0, 300.0,
-            qp_number("p", default_price, 50, 300), step=1.0,
-            help="전기를 1kWh 판매할 때 받는 금액입니다. 계약서나 사업 공고의 단가를 입력하세요.",
+            "전력 판매단가(원/kWh)", min_value=50.0, max_value=300.0, step=1.0,
+            key="sale_price",
+            help="전기를 1kWh 판매할 때 받는 금액입니다. 계약서나 사업 공고의 단가를 입력하세요. "
+                 "직접 고치기 전까지는 판매 방식에 맞춘 기본값이 따라옵니다.",
         )
 
         with st.expander("세부 가정 조정 · 시설용량, 발전시간, 수익률, 단수, 출력제어"):
             e1, e2 = st.columns(2, gap="medium")
             with e1:
                 capacity = int(st.number_input(
-                    "시설용량(kW)", 10, 1_000,
-                    int(qp_number("c", recommended_kw, 10, 1_000)), step=1,
+                    "시설용량(kW)", min_value=CAPACITY_MIN, max_value=CAPACITY_MAX, step=1,
+                    key="capacity",
                 ))
                 daily_hours = st.slider(
-                    "1일 평균 발전시간", 2.5, 5.0,
-                    qp_number("h", A["facility"]["daily_gen_hours"], 2.5, 5.0), step=.1,
+                    "1일 평균 발전시간", 2.5, 5.0, step=.1, key="daily_hours",
                 )
                 discount_rate = st.number_input(
-                    "요구수익률·할인율(%)", 0.0, 20.0,
-                    qp_number("d", A["discount"]["base_rate"] * 100, 0, 20), step=.5,
+                    "요구수익률·할인율(%)", min_value=0.0, max_value=20.0, step=.5,
+                    key="discount_pct",
                     help="대출금리와 별개입니다. 투자자가 요구하는 수익률을 입력하세요.",
                 ) / 100
             with e2:
                 yield_reduction = st.slider(
-                    "벼 단수 감소율(%)", 0, 50,
-                    int(qp_number("y", A["crops"]["rice"]["yield_reduction"] * 100, 0, 50)), step=1,
+                    "벼 단수 감소율(%)", 0, 50, step=1, key="yield_pct",
                 ) / 100
                 curtailment_rate = st.slider(
-                    "출력제어 비율(%)", 0.0, 15.0,
-                    qp_number("k", A["facility"].get("curtailment_rate", 0.0) * 100, 0, 15), step=.5,
+                    "출력제어 비율(%)", 0.0, 15.0, step=.5, key="curtailment_pct",
                     help="계통 사정으로 발전이 차단되는 연간 비율. 전남 등 계통 포화 지역은 "
                          "봄철 경부하기 출력제어 위험이 있습니다. 기본 0%는 KREI(2023)와 동일 가정이며 "
                          "실적·전망은 한국전력거래소(KPX)·한전 공고를 확인하세요.",
@@ -345,7 +407,9 @@ finance = FinanceInput(
     equity_ratio=equity_pct / 100, loan_rate=loan_rate,
     grace_years=int(A["finance"]["grace_years"]), repay_years=int(A["finance"]["repay_years"]),
 )
-price = PowerPriceInput(track="ppa", ppa_fixed_krw_per_kwh=sale_price)
+# 단가는 화면에 입력된 값이 항상 우선한다. track 은 어떤 판매 방식을 전제로 한
+# 단가인지 기록만 하고, unit_price 는 override 를 그대로 사용한다.
+price = PowerPriceInput(track=track, override_krw_per_kwh=sale_price)
 base_opex = OpexInput(**A["opex_thousand_krw"])
 opex = scale_opex_for_project(
     base_opex, base_capacity_kw=float(A["facility"]["capacity_kw"]), capacity_kw=capacity,
